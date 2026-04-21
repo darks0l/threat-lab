@@ -2,8 +2,14 @@
 dist/
 node_modules/
 
+# Foundry build artifacts
+cache/
+out/
+
 # Reports and temporary files
 threat-reports/
+threat-lab-report-*.json
+threat-lab-deep-research-*.json
 library/index.json
 library/reports/
 library/submissions/
