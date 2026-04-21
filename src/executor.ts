@@ -337,10 +337,19 @@ export async function executeScenario(
 
 export async function isAnvilRunning(): Promise<boolean> {
   try {
-    const provider = new ethers.JsonRpcProvider(DEFAULT_ANVIL_RPC);
-    await provider.getBlockNumber();
-    await provider.destroy();
-    return true;
+    // Use a simple HTTP check with AbortController timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const response = await fetch(DEFAULT_ANVIL_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) return false;
+    const data = await response.json() as { result?: string };
+    return data.result !== undefined;
   } catch {
     return false;
   }
