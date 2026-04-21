@@ -12,41 +12,46 @@ Threat Lab is the research infrastructure for that gap. Instead of waiting for t
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌────────────┐     ┌──────────────┐
-│  Scenario   │────▶│   Deploy     │────▶│  Execute   │────▶│  AI Analysis │
-│  Library    │     │  (Anvil/     │     │  Exploit   │     │  (Bankr LLM  │
-│             │     │  Sepolia)    │     │  Steps     │     │   Gateway)   │
-└─────────────┘     └──────────────┘     └────────────┘     └──────────────┘
-                                                                    │
-                                                                    ▼
-                                              ┌──────────────┐     ┌──────────────┐
-                                              │   Pattern    │◀────│   Submit     │
-                                              │   Library    │     │  Findings    │
-                                              │   (grows)    │     │              │
-                                              └──────────────┘     └──────────────┘
+│  Scenario   │────▶│   Execute    │────▶│  Analyze   │────▶│   Library    │
+│  Library    │     │ (Anvil/Sepolia)│     │(multi-model)│     │  (grows)     │
+└─────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+                           │                    │
+                           ▼                    ▼
+                    Real tx traces       Threat Report
+                    + gas analysis      + recommendations
 ```
 
 1. **Choose a scenario** — pre-built exploit templates or your own
-2. **Deploy it** — to a local Anvil chain or Base Sepolia testnet
-3. **Execute the exploit** — run the attack steps, capture the trace
-4. **Get AI analysis** — Bankr LLM gateway breaks down exactly what happened
-5. **Submit findings** — your submission expands the pattern library
+2. **Execute it** — deploy contracts to Anvil or Base Sepolia, run exploit steps, capture real tx traces
+3. **Get AI analysis** — multi-model analysis via Bankr LLM gateway produces structured threat reports
+4. **Submit to library** — findings are stored permanently, searchable, citable
+5. **Pattern library compounds** — every submission makes future analysis smarter
 
 ---
 
 ## Quick start
 
 ```bash
-# List available scenarios
+# Check status
+npx threat-lab status
+
+# List scenarios + library
 npx threat-lab list
 
-# Run a scenario locally
-npx threat-lab run reentrancy-101
+# Execute a scenario (requires Anvil running)
+npx threat-lab run reentrancy-101 --network anvil
 
-# Analyze a contract
-npx threat-lab analyze ./contracts/ReentrancyVault.sol
+# Analyze a Solidity file directly
+npx threat-lab analyze ./contracts/MyVault.sol
 
-# Submit findings
-npx threat-lab submit ./my-finding.json
+# Search the pattern library
+npx threat-lab library search reentrancy
+
+# View library stats
+npx threat-lab library
+
+# Export library (IPFS-ready)
+npx threat-lab export
 ```
 
 ---
@@ -65,21 +70,70 @@ npx threat-lab submit ./my-finding.json
 
 ```
 threat-lab/
-├── contracts/           # Exploitable Solidity contract templates
+├── src/
+│   ├── schemas.ts           # Zod schemas for all entities
+│   ├── scenarios.ts         # Built-in attack scenario library
+│   ├── executor.ts          # Deploy contracts + run exploit steps
+│   ├── runner.ts           # Full orchestrator: execute → analyze → library
+│   ├── modelabIntegration.ts # Multi-model AI analysis via Bankr gateway
+│   ├── analyzer.ts         # AI analysis engine (signature + LLM)
+│   ├── patternDetector.ts   # Pattern matching against known signatures
+│   ├── library.ts          # Persistent pattern library (IPFS-ready)
+│   ├── api.ts             # Submission endpoint handler
+│   └── cli.ts             # Full CLI (list/run/analyze/library/export)
+├── contracts/             # Exploitable Solidity contract templates
 │   ├── ReentrancyVault.sol
 │   ├── OracleManipulation.sol
 │   └── FlashLoanAttacker.sol
-├── src/
-│   ├── schemas.ts      # Zod schemas for findings/submissions
-│   ├── scenarios.ts    # Built-in attack scenario library
-│   ├── analyzer.ts     # AI analysis via Bankr LLM gateway
-│   ├── patternDetector.ts  # Signature-based pattern matching
-│   ├── api.ts          # Submission endpoint handler
-│   └── cli.ts          # threat-lab CLI
+├── library/               # Pattern library storage (created at runtime)
+│   ├── index.json         # Library index
+│   └── reports/           # Individual threat reports
 ├── scripts/
-│   └── deploy.ts       # Deploy scenarios to Anvil / Base Sepolia
-├── test/               # Foundry/Forge tests
-└── foundry.toml        # Forge configuration
+│   └── deploy.ts          # Deploy scenarios to Anvil / Base Sepolia
+├── test/                  # Foundry/Forge tests
+└── foundry.toml           # Forge configuration
+```
+
+---
+
+## The execution loop
+
+```
+threat-lab run reentrancy-101
+
+⚡ Executing: Reentrancy Vault Drain
+   Network: anvil | RPC: http://127.0.0.1:8545
+
+  [0] Deployed ReentrancyVault at 0x5FbDB2315678afecb367f032d93F642f54180a3E
+  [1] Funded vault with 10 ETH
+  [2] Deployed Attacker contract
+  [3] Executed attack(10 ETH) -> recursive withdrawal confirmed
+
+📋 Captured 4 transactions
+
+🧠 Running modelab analysis for: Reentrancy Vault Drain
+   Models: claude-sonnet-4-6
+  ✅ claude-sonnet-4-6: reentrancy (80% confidence) — 1420ms
+
+🏆 Best analysis: claude-sonnet-4-6 — reentrancy (80% conf)
+
+📚 Added to pattern library:
+   ID: a1b2c3d4-...
+   Pattern: reentrancy | Severity: critical
+   Library size: 7 entries
+
+────────────────────────────────────────────────────────────
+📋 THREAT REPORT — Reentrancy Vault Drain
+   Pattern:   reentrancy
+   Severity:   critical
+   Confidence: 80%
+   AI Model:  claude-sonnet-4-6
+
+   Recommendations:
+   - Implement CEI pattern (Checks-Effects-Interactions)
+   - Add ReentrancyGuard from OpenZeppelin
+   - Use pull-based withdrawal pattern instead of push
+────────────────────────────────────────────────────────────
 ```
 
 ---
@@ -98,7 +152,24 @@ The library currently recognizes:
 - `delegatecall-injection` — storage corruption via delegatecall
 - `permit-front-run` — EIP712 signature replay
 
-Every submission that gets confirmed expands the library. New patterns can be added by submitting a new scenario.
+Every submission expands the library. New patterns can be added by submitting a new scenario.
+
+---
+
+## Environment variables
+
+```bash
+# Bankr LLM gateway (required for AI analysis)
+BANKR_API_KEY=your_bankr_api_key
+BANKR_API_URL=https://gateway.bankr.gg/v1/chat/completions
+
+# Anvil (defaults to http://127.0.0.1:8545)
+ANVIL_RPC=http://127.0.0.1:8545
+
+# Base Sepolia deployment
+BASE_SEPOLIA_RPC=https://sepolia.base.org
+DEPLOYER_PRIVATE_KEY=0x...
+```
 
 ---
 
@@ -113,14 +184,14 @@ npm test             # Run SDK tests
 
 ---
 
-## Deploying contracts
+## Deploying scenarios
 
 ```bash
-# Local Anvil
-forge build && ts-node scripts/deploy.ts --network anvil
+# Local Anvil (recommended for testing)
+forge build && npx threat-lab run reentrancy-101 --network anvil
 
 # Base Sepolia (requires DEPLOYER_PRIVATE_KEY)
-forge build && ts-node scripts/deploy.ts --network base-sepolia --scenario reentrancy-101
+npx threat-lab run reentrancy-101 --network base-sepolia
 ```
 
 ---
