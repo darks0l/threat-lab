@@ -10,6 +10,8 @@ import { getScenario } from './scenarios.js';
 import type { ExecutionResult } from './executor.js';
 import type { ThreatReport } from './schemas.js';
 import type { ModelabAnalysisResult } from './modelabIntegration.js';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 
 export interface RunResult {
   success: boolean;
@@ -18,6 +20,19 @@ export interface RunResult {
   analysisResults?: ModelabAnalysisResult[];
   libraryEntry?: Awaited<ReturnType<typeof addToLibrary>>;
   error?: string;
+}
+
+async function getContractCode(contractName: string): Promise<string> {
+  // Try reading from contracts/ directory directly
+  try {
+    const { readFile } = await import('fs/promises');
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const solPath = resolve(__dirname, '..', 'contracts', `${contractName}.sol`);
+    return await readFile(solPath, 'utf-8');
+  } catch { /* file not found, fall through */ }
+
+  // Fallback to hardcoded examples
+  return CONTRACT_CODE_MAP[contractName] ?? DEFAULT_CONTRACT_CODE;
 }
 
 const CONTRACT_CODE_MAP: Record<string, string> = {
@@ -31,6 +46,7 @@ contract ReentrancyVault {
         require(success);
         balances[msg.sender] -= amount;
     }
+    function getBalance() external view returns (uint256) { return address(this).balance; }
 }`,
   'OracleManipulation': `
 contract OracleManipulation {
@@ -132,7 +148,8 @@ export async function runThreatLab(
   );
 
   // 5. Run AI analysis
-  const contractCode = CONTRACT_CODE_MAP[scenario.templateContract ?? ''] ?? DEFAULT_CONTRACT_CODE;
+  const templateContract = scenario.templateContract ?? scenario.exploitSteps.find(s => s.action === 'deploy')?.target ?? '';
+  const contractCode = await getContractCode(templateContract);
   let analysisResults: Awaited<ReturnType<typeof analyzeWithModelab>> = [];
   let bestReport: ThreatReport | null = null;
 

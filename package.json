@@ -1,6 +1,6 @@
 {
   "name": "threat-lab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI-powered threat research platform — deploy exploits, get AI analysis, build the collective pattern library",
   "type": "module",
   "bin": {

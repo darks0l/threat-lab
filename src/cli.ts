@@ -23,10 +23,28 @@ import { runThreatLab } from './runner.js';
 import { isAnvilRunning } from './executor.js';
 import { auditDependencies } from './audit.js';
 import { scanTarget } from './scanner.js';
+import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function getVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
+    return pkg.version ?? '0.0.0';
+  } catch { return '0.0.0'; }
+}
 
 const args = process.argv.slice(2);
 const command = args[0];
+
+// Handle --version flag early
+if (command === '--version' || command === '-v' || command === 'version') {
+  console.log(`threat-lab v${getVersion()}`);
+  process.exit(0);
+}
 
 async function main() {
   switch (command) {
@@ -65,8 +83,9 @@ async function main() {
 
     case 'analyze': {
       const filePath = args[1];
+      const jsonOutput = args.includes('--json');
       if (!filePath) {
-        console.error('Usage: threat-lab analyze <contract.sol>');
+        console.error('Usage: threat-lab analyze <contract.sol> [--json]');
         process.exit(1);
       }
       try {
@@ -104,6 +123,13 @@ async function main() {
           for (const r of report.recommendations.slice(0, 3)) {
             console.log(`   - ${r}`);
           }
+        }
+
+        // JSON output for machine-readable pipelines
+        if (jsonOutput) {
+          console.log('\n```json');
+          console.log(JSON.stringify(report, null, 2));
+          console.log('```');
         }
       } catch (err) {
         console.error(`Failed: ${err}`);
@@ -257,6 +283,8 @@ async function main() {
       const noIntel = args.includes('--no-intel');
       const deep = args.includes('--deep');
       const network = args.includes('--network') ? args[args.indexOf('--network') + 1] : 'anvil';
+      const outputIdx = args.indexOf('--output');
+      const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : undefined;
 
       console.log(`\n🔬 Unified Security Scan — ${targetPath}`);
       console.log(`   Static analysis:   always on (signature patterns + AI deep-read)`);
@@ -288,7 +316,7 @@ Usage:
   threat-lab list                          List available scenarios
   threat-lab run <scenario-id>            Execute scenario + AI analysis + library
   threat-lab run reentrancy-101 --network anvil
-  threat-lab analyze <contract.sol>        Analyze a Solidity file (AI only)
+  threat-lab analyze <contract.sol> [--json]  Analyze a Solidity file (AI only)
   threat-lab scan <path>                  Unified scan: static + deps + intel + exploit sim
   threat-lab scan <path> --quick          Skip exploit simulation (faster)
   threat-lab scan <path> --no-deps        Skip dependency audit

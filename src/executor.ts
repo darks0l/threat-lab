@@ -102,7 +102,7 @@ interface Artifact {
   abi: ethers.InterfaceAbi;
 }
 
-async function loadArtifact(name: string): Promise<Artifact> {
+export async function loadArtifact(name: string): Promise<Artifact> {
   const paths = [
     resolve(__dirname, '..', 'out', `${name}.sol`, `${name}.json`),
     resolve(__dirname, '..', 'out', `${name}.json`),

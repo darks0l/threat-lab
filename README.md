@@ -1,6 +1,8 @@
 # 🔬 Threat Lab
 
 [![Threat Assessment](https://img.shields.io/badge/threat%20analysis-4%20layers-ff4444?style=flat-square&logo=shield)](https://github.com/darks0l/threat-lab)
+[![npm version](https://img.shields.io/badge/npm-0.2.0-orange?style=flat-square)](https://www.npmjs.com/package/threat-lab)
+[![tests](https://img.shields.io/badge/tests-89%20passing-brightgreen?style=flat-square)](https://github.com/darks0l/threat-lab)
 [![Solidity](https://img.shields.io/badge/solidity-0.8-blue?style=flat-square&logo=solidity)](https://docs.soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/foundry-deployed-ff1111?style=flat-square&logo=foundry)](https://book.getfoundry.sh/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](./LICENSE)
