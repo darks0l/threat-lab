@@ -176,10 +176,11 @@ The library currently recognizes:
 - `integer-overflow` — unchecked arithmetic
 - `delegatecall-injection` — storage corruption via delegatecall
 - `permit-front-run` — EIP712 signature replay
-- `governance-attack` — flash loan DAO takeover
 - `liquidation-attack` — oracle-manipulated liquidation exploit
 
 Every submission expands the library. New patterns can be added by submitting a new scenario.
+
+**Community submissions are reviewed manually.** See [library/SUBMISSION_GUIDE.md](library/SUBMISSION_GUIDE.md) for the full workflow, JSON format, and review criteria.
 
 ---
 
