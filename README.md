@@ -38,11 +38,20 @@ npx threat-lab status
 # List scenarios + library
 npx threat-lab list
 
+# Unified scan — all 3 layers in one pass (recommended)
+npx threat-lab scan .              # full: static + deps + exploit sim
+npx threat-lab scan . --quick       # fast: static + deps (no Anvil needed)
+npx threat-lab scan ./contracts --no-deps   # contract only: static + exploit sim
+
+# Analyze a Solidity file directly (static analysis only)
+npx threat-lab analyze ./contracts/MyVault.sol
+
+# Dependency audit only (npm + OSV + Socket.dev)
+npx threat-lab audit .
+npx threat-lab audit ./ --no-socket   # skip Socket.dev (no API key)
+
 # Execute a scenario (requires Anvil running)
 npx threat-lab run reentrancy-101 --network anvil
-
-# Analyze a Solidity file directly
-npx threat-lab analyze ./contracts/MyVault.sol
 
 # Search the pattern library
 npx threat-lab library search reentrancy
@@ -63,6 +72,9 @@ npx threat-lab export
 | `reentrancy-101` | Reentrancy vault drain | Critical | Beginner |
 | `oracle-manipulation-101` | Uniswap V2 oracle manipulation | High | Intermediate |
 | `flash-loan-101` | Flash loan arbitrage | Medium | Beginner |
+| `sandwich-attack-101` | AMM sandwich attack | High | Intermediate |
+| `governance-attack-101` | DAO governance flash loan takeover | Critical | Advanced |
+| `liquidation-attack-101` | Aave V2 oracle liquidation attack | High | Advanced |
 
 ---
 
@@ -74,24 +86,28 @@ threat-lab/
 │   ├── schemas.ts           # Zod schemas for all entities
 │   ├── scenarios.ts         # Built-in attack scenario library
 │   ├── executor.ts          # Deploy contracts + run exploit steps
-│   ├── runner.ts           # Full orchestrator: execute → analyze → library
+│   ├── runner.ts            # Full orchestrator: execute → analyze → library
 │   ├── modelabIntegration.ts # Multi-model AI analysis via Bankr gateway
-│   ├── analyzer.ts         # AI analysis engine (signature + LLM)
-│   ├── patternDetector.ts   # Pattern matching against known signatures
-│   ├── library.ts          # Persistent pattern library (IPFS-ready)
-│   ├── api.ts             # Submission endpoint handler
-│   └── cli.ts             # Full CLI (list/run/analyze/library/export)
-├── contracts/             # Exploitable Solidity contract templates
+│   ├── analyzer.ts          # AI analysis engine (signature + LLM)
+│   ├── patternDetector.ts    # Pattern matching against known signatures
+│   ├── library.ts           # Persistent pattern library (IPFS-ready)
+│   ├── scanner.ts           # Unified scan orchestrator (static + deps + sim)
+│   ├── audit.ts             # Dependency audit (OSV + npm + Socket.dev)
+│   ├── auditSchemas.ts      # Zod schemas for audit result types
+│   ├── api.ts               # Submission endpoint handler
+│   └── cli.ts               # Full CLI (scan/audit/run/analyze/library/export)
+├── contracts/              # Exploitable Solidity contract templates
 │   ├── ReentrancyVault.sol
 │   ├── OracleManipulation.sol
-│   └── FlashLoanAttacker.sol
-├── library/               # Pattern library storage (created at runtime)
-│   ├── index.json         # Library index
-│   └── reports/           # Individual threat reports
+│   ├── FlashLoanAttacker.sol
+│   └── *.sol                # Additional scenario contracts
+├── library/                # Pattern library storage (created at runtime)
+│   ├── index.json           # Library index
+│   └── reports/             # Individual threat reports
 ├── scripts/
-│   └── deploy.ts          # Deploy scenarios to Anvil / Base Sepolia
-├── test/                  # Foundry/Forge tests
-└── foundry.toml           # Forge configuration
+│   └── deploy.ts            # Deploy scenarios to Anvil / Base Sepolia
+├── test/                   # Foundry/Forge tests
+└── foundry.toml            # Forge configuration
 ```
 
 ---
@@ -151,6 +167,8 @@ The library currently recognizes:
 - `integer-overflow` — unchecked arithmetic
 - `delegatecall-injection` — storage corruption via delegatecall
 - `permit-front-run` — EIP712 signature replay
+- `governance-attack` — flash loan DAO takeover
+- `liquidation-attack` — oracle-manipulated liquidation exploit
 
 Every submission expands the library. New patterns can be added by submitting a new scenario.
 
@@ -172,6 +190,36 @@ DEPLOYER_PRIVATE_KEY=0x...
 ```
 
 ---
+
+## The unified scan — all 3 layers in one command
+
+```
+npx threat-lab scan .
+
+🔬 Threat Lab — Scanning .
+   Static analysis:   always on (signature patterns + AI deep-read)
+   Dependency audit: ON (npm + OSV.dev + Socket.dev)
+   Exploit sim:      ON (Anvil)
+
+  🟠 contracts/MyVault.sol [score: 72] [exploit sim: liquidation-attack]
+  🔴 contracts/GovToken.sol [score: 89] [exploit sim: governance-attack]
+  🟢 contracts/SafeMath.sol [score: 3]
+
+   Overall Threat: HIGH | Score: 80/100 | 3 files
+```
+
+The unified `scan` command runs three independent passes in parallel per file:
+
+**Layer 1 — Static Analysis** *(always on)*
+Signature pattern matching against all known attack patterns + Bankr AI deep-read of contract code. Scans every `.sol` file in the target path recursively.
+
+**Layer 2 — Dependency Audit** *(if `node_modules` present)*
+Queries OSV.dev, npm Security Advisories, and Socket.dev for known vulnerabilities and malicious packages. Active exploits (CVEs described as "actively exploited") are flagged at highest priority.
+
+**Layer 3 — Exploit Simulation** *(if Anvil running + contract matched to scenario)*
+Matches your contract to a built-in scenario by code signature, deploys it to Anvil, executes the attack, and runs the transaction trace through AI for a verdict.
+
+Reports are saved to `threat-reports/<file>.<pattern>.md` and `threat-reports/simulation/<scenario>.json`.
 
 ## Building
 
