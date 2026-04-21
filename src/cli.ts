@@ -253,16 +253,25 @@ async function main() {
       const quick = args.includes('--quick');
       const noDeps = args.includes('--no-deps');
       const noSim = args.includes('--no-sim');
+      const noIntel = args.includes('--no-intel');
+      const deep = args.includes('--deep');
       const network = args.includes('--network') ? args[args.indexOf('--network') + 1] : 'anvil';
 
       console.log(`\n🔬 Unified Security Scan — ${targetPath}`);
       console.log(`   Static analysis:   always on (signature patterns + AI deep-read)`);
       console.log(`   Dependency audit: ${noDeps ? 'OFF (--no-deps)' : 'OSV + npm advisories + Socket.dev'}`);
-      console.log(`   Exploit sim:      ${quick || noSim ? 'OFF (--quick / --no-sim)' : `Anvil deployment + AI analysis`}`);
-      console.log(`   Network:          ${network}`);
+      console.log(`   Threat intel:    ${noIntel ? 'OFF (--no-intel)' : 'Brave Search + GH advisories, 14-day window'}`);
+      console.log(`   Exploit sim:     ${quick || noSim ? 'OFF (--quick / --no-sim)' : `Anvil deployment + AI analysis`}`);
+      console.log(`   Deep research:   ${deep ? 'ON (modelab multi-model + patch generation)' : 'OFF (use --deep to enable)'}`);
+      console.log(`   Network:         ${network}`);
+
+      if (deep && !process.env.BANKR_API_KEY) {
+        console.error(`\n❌ --deep requires BANKR_API_KEY to be set`);
+        process.exit(1);
+      }
 
       try {
-        await scanTarget({ target: targetPath, quick, noDeps, noSim, network });
+        await scanTarget({ target: targetPath, quick, noDeps, noSim, noIntel, network, deep });
       } catch (err) {
         console.error(`\n❌ Scan failed: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
@@ -279,14 +288,16 @@ Usage:
   threat-lab run <scenario-id>            Execute scenario + AI analysis + library
   threat-lab run reentrancy-101 --network anvil
   threat-lab analyze <contract.sol>        Analyze a Solidity file (AI only)
-  threat-lab scan <path>                  Unified scan: static + deps + exploit sim
+  threat-lab scan <path>                  Unified scan: static + deps + intel + exploit sim
   threat-lab scan <path> --quick          Skip exploit simulation (faster)
   threat-lab scan <path> --no-deps        Skip dependency audit
+  threat-lab scan <path> --no-intel       Skip live threat intel (Layer 2b)
+  threat-lab scan <path> --deep           Run deep research on flagged findings (modelab)
   threat-lab audit <path>                 Dependency audit only (npm + OSV + Socket.dev)
   threat-lab audit ./ --no-socket         Skip Socket.dev (no API key)
   threat-lab submit <submission.json>     Submit a finding
   threat-lab library                      Show library stats
-  threat-lab library search <pattern>     Search pattern library
+  threat-lab library search <pattern>    Search pattern library
   threat-lab patterns                    Show known attack patterns
   threat-lab export                      Export library to JSON
   threat-lab status                      Check Anvil / network status
@@ -294,10 +305,17 @@ Usage:
 Quick start:
   threat-lab status          # Check Anvil is running
   threat-lab list            # See available scenarios
-  threat-lab scan .          # Full unified scan (all 3 layers)
+  threat-lab scan .          # Full unified scan (all 4 layers)
   threat-lab scan . --quick  # Fast scan (skip exploit simulation)
+  threat-lab scan . --deep   # Full scan + modelab deep research + patch generation
   threat-lab audit .         # Dependency audit only
   threat-lab run reentrancy-101  # Execute + analyze + add to library
+
+Environment variables:
+  BANKR_API_KEY              Required for AI analysis and deep research
+  BRAVE_SEARCH_API_KEY       Required for live threat intel (get at brave.com/search/api)
+  GITHUB_TOKEN               Optional, for GitHub Security Advisories (faster, higher rate limit)
+  SOCKET_DEV_API_KEY         Optional, for malicious package detection (get at socket.dev)
 `);
       break;
     }

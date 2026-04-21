@@ -25,6 +25,8 @@ import { auditDependencies } from './audit.js';
 import { executeScenario, isAnvilRunning } from './executor.js';
 import { getScenario, listScenarios } from './scenarios.js';
 import { analyzeWithModelab, getBestAnalysis } from './modelabIntegration.js';
+import { runThreatIntel, type ThreatIntelResult } from './threatIntel.js';
+import { runDeepResearchBatch, formatDeepResearchReport, type DeepResearchFinding } from './deepResearch.js';
 import type { ThreatReport, AttackPattern, Severity } from './schemas.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -33,6 +35,7 @@ interface ScanResult {
   file: string;
   staticAnalysis: StaticResult | null;
   dependencyAudit: DepAuditResult | null;
+  threatIntel: ThreatIntelResult[];
   exploitSim: ExploitSimResult | null;
   overallSeverity: Severity;
   threatScore: number; // 0-100
@@ -97,10 +100,18 @@ function worstSeverity(a: Severity, b: Severity): Severity {
 }
 
 function computeThreatScore(results: ScanResult): number {
-  const weights = { static: 0.4, deps: 0.3, sim: 0.3 };
+  const weights = { static: 0.3, intel: 0.25, deps: 0.2, sim: 0.25 };
   let score = 0;
   if (results.staticAnalysis?.aiReport) {
     score += SEVERITY_SCORE[results.staticAnalysis.aiReport.severity] * weights.static;
+  }
+  if (results.threatIntel.length > 0) {
+    const intelSev = results.threatIntel.reduce((worst: string, t: ThreatIntelResult) => {
+      const order = ['critical', 'high', 'medium', 'low', 'none'] as const;
+      return order.indexOf(t.overallSeverity) < order.indexOf(worst as 'critical' | 'high' | 'medium' | 'low' | 'none') ? t.overallSeverity : worst;
+    }, 'none');
+    const intelScore = intelSev === 'critical' ? 100 : intelSev === 'high' ? 75 : intelSev === 'medium' ? 50 : intelSev === 'low' ? 25 : 0;
+    score += intelScore * weights.intel;
   }
   if (results.dependencyAudit) {
     score += results.dependencyAudit.score * weights.deps;
@@ -169,6 +180,33 @@ async function runStaticAnalysis(filePath: string): Promise<StaticResult> {
   }
 
   return { patterns, aiReport, contractCode: code };
+}
+
+// ── Layer 2b: Threat Intelligence (live web search) ───────────────────────────
+
+async function runThreatIntelLayer(
+  projectPath: string,
+): Promise<ThreatIntelResult[]> {
+  // Read package.json to get all deps
+  try {
+    const { readFile } = await import('fs/promises');
+    const pkgPath = join(projectPath, 'package.json');
+    const pkg = JSON.parse(await readFile(pkgPath, 'utf-8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    const pkgs = [
+      ...Object.entries(pkg.dependencies ?? {}),
+      ...Object.entries(pkg.devDependencies ?? {}),
+      ...Object.entries(pkg.optionalDependencies ?? {}),
+    ].map(([name, version]) => ({ name, version: version.replace(/^[\^~>=<]/, '') }));
+
+    if (pkgs.length === 0) return [];
+    return await runThreatIntel({ packages: pkgs });
+  } catch {
+    return [];
+  }
 }
 
 async function runDependencyAudit(projectPath: string): Promise<DepAuditResult> {
@@ -356,6 +394,21 @@ function generateReport(results: ScanResult[]): string {
       }
     }
 
+    if (r.threatIntel.length > 0) {
+      const activeExploits = r.threatIntel.filter(t => t.hasActiveExploit);
+      const worst = r.threatIntel.reduce((worst: string, t) => {
+        const order = ['critical', 'high', 'medium', 'low', 'none'] as const;
+        return order.indexOf(t.overallSeverity) < order.indexOf(worst as 'critical' | 'high' | 'medium' | 'low' | 'none') ? t.overallSeverity : worst;
+      }, 'none');
+      const sevIcon2 = worst === 'critical' ? '🔴' : worst === 'high' ? '🟠' : worst === 'medium' ? '🟡' : worst === 'low' ? '🟢' : '⚪';
+      const totalResults = r.threatIntel.reduce((s, t) => s + t.searches.reduce((ss, sr) => ss + sr.resultCount, 0), 0);
+      const alertCount = r.threatIntel.reduce((s, t) => s + t.searches.reduce((ss, sr) => ss + sr.findings.filter(f => f.isAlert).length, 0), 0);
+      lines.push(`      Threat Intel: ${sevIcon2} ${worst.toUpperCase()} | ${totalResults} web mentions | ${alertCount} alert(s) [last 14 days]`);
+      if (activeExploits.length > 0) {
+        lines.push(`        🚨 LIVE THREAT: ${activeExploits.length} package(s) with active exploit discussion online`);
+      }
+    }
+
     if (r.dependencyAudit) {
       const { threatLevel, vulns, advisories } = r.dependencyAudit;
       const total = vulns.length + advisories.length;
@@ -403,17 +456,20 @@ export interface ScanOptions {
   quick?: boolean;       // skip exploit simulation
   noDeps?: boolean;      // skip dependency audit
   noSim?: boolean;       // skip exploit simulation
+  noIntel?: boolean;     // skip live threat intel (Layer 2b)
   network?: string;
   models?: string[];
+  deep?: boolean;         // run deep research on flagged findings via modelab
 }
 
 export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
-  const { target, quick = false, noDeps = false, noSim = false, network = 'anvil' } = options;
+  const { target, quick = false, noDeps = false, noSim = false, noIntel = false, network = 'anvil', deep = false } = options;
 
   console.log(`\n🔬 Threat Lab — Scanning ${target}`);
-  if (!noDeps) console.log('   [1/3] Dependency audit  (OSV + npm advisories + Socket.dev)');
-  if (!noSim && !quick) console.log('   [2/3] Exploit simulation (Anvil deployment + AI analysis)');
-  console.log('   [3/3] Static analysis  (signature patterns + AI deep-read)');
+  if (!noDeps) console.log('   [1/4] Dependency audit  (OSV + npm advisories + Socket.dev)');
+  if (!noIntel) console.log('   [2/4] Live threat intel (Brave Search + GH advisories, 14-day window)');
+  if (!noSim && !quick) console.log('   [3/4] Exploit simulation (Anvil deployment + AI analysis)');
+  console.log('   [4/4] Static analysis  (signature patterns + AI deep-read)');
   console.log('');
 
   const startAll = Date.now();
@@ -432,19 +488,22 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
     const recommendations: string[] = [];
 
     // ── Run all three in parallel ──
-    const [staticRes, depRes, simRes] = await Promise.allSettled([
+    const [staticRes, depRes, intelRes, simRes] = await Promise.allSettled([
       runStaticAnalysis(file),
       noDeps ? Promise.resolve(null) : runDependencyAudit(target),
+      noIntel ? Promise.resolve(null) : runThreatIntelLayer(target),
       quick || noSim ? Promise.resolve(null) : runExploitSim(file, network),
     ]);
 
     const staticAnalysis = staticRes.status === 'fulfilled' ? staticRes.value : null;
     const dependencyAudit = depRes.status === 'fulfilled' ? depRes.value : null;
+    const threatIntel: ThreatIntelResult[] = intelRes.status === 'fulfilled' && intelRes.value != null ? intelRes.value : [];
     const exploitSim = simRes.status === 'fulfilled' ? simRes.value : null;
 
     // Collect errors
     if (staticRes.status === 'rejected') errors.push(`static: ${staticRes.reason}`);
     if (depRes.status === 'rejected') errors.push(`deps: ${depRes.reason}`);
+    if (intelRes.status === 'rejected') errors.push(`intel: ${intelRes.reason}`);
     if (simRes.status === 'rejected') errors.push(`sim: ${simRes.reason}`);
 
     // Determine overall severity
@@ -455,6 +514,15 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
       if (dependencyAudit.threatLevel === 'critical') severities.push('critical');
       else if (dependencyAudit.threatLevel === 'high') severities.push('high');
       else if (dependencyAudit.threatLevel === 'medium') severities.push('medium');
+    }
+    if (threatIntel.length > 0) {
+      const worstIntel = threatIntel.reduce((worst: string, t) => {
+        const order = ['critical', 'high', 'medium', 'low', 'none'] as const;
+        return order.indexOf(t.overallSeverity) < order.indexOf(worst as 'critical' | 'high' | 'medium' | 'low' | 'none') ? t.overallSeverity : worst;
+      }, 'none');
+      if (worstIntel === 'critical') severities.push('critical');
+      else if (worstIntel === 'high') severities.push('high');
+      else if (worstIntel === 'medium') severities.push('medium');
     }
     if (exploitSim?.aiReport) severities.push(exploitSim.aiReport.severity);
     else if (exploitSim?.success) severities.push('high');
@@ -473,6 +541,9 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
     if (dependencyAudit?.advisories.some(a => a.activeExploit)) {
       recommendations.push('🚨 ACTIVE EXPLOIT: Update affected packages immediately');
     }
+    if (threatIntel.some(t => t.hasActiveExploit)) {
+      recommendations.push('🚨 LIVE THREAT: Packages with active exploits found — do NOT use until confirmed safe');
+    }
     if (exploitSim?.success) {
       recommendations.push(`Exploit simulation confirmed: review ${exploitSim.scenarioName} pattern`);
     }
@@ -482,6 +553,7 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
       file,
       staticAnalysis,
       dependencyAudit,
+      threatIntel,
       exploitSim,
       overallSeverity,
       threatScore: 0, // filled below
@@ -497,12 +569,69 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
     // Per-file console output
     const sevIcon = scanResult.overallSeverity === 'critical' ? '🔴' : scanResult.overallSeverity === 'high' ? '🟠' : scanResult.overallSeverity === 'medium' ? '🟡' : scanResult.overallSeverity === 'low' ? '🟢' : '⚪';
     const simTag = exploitSim ? (exploitSim.success ? '⚡ EXPLOITED' : '✅ safe') : noSim || quick ? '⏭ skipped' : '—';
-    console.log(`  ${sevIcon} ${file} [score: ${scanResult.threatScore}] [${simTag}]`);
+    const activeCount = threatIntel.filter(t => t.hasActiveExploit).length;
+    const intelTag = activeCount > 0 ? `🚨 LIVE THREAT (${activeCount})` : noIntel ? '⏭ intel off' : '🌐 intel ok';
+    console.log(`  ${sevIcon} ${file} [score: ${scanResult.threatScore}] [${simTag}] [${intelTag}]`);
   }
 
   // ── Print full report ──
   const report = generateReport(results);
   console.log(report);
+
+  // ── Deep research via modelab ──
+  if (deep) {
+    console.log('\n🔬 Running deep research via modelab on flagged findings...');
+    const deepFindings: DeepResearchFinding[] = [];
+
+    for (const r of results) {
+      // Collect static findings
+      if (r.staticAnalysis?.aiReport) {
+        deepFindings.push({
+          category: 'static',
+          severity: r.staticAnalysis.aiReport.severity,
+          title: `${r.staticAnalysis.aiReport.attackPattern} in ${r.file}`,
+          description: r.staticAnalysis.aiReport.summary,
+          contractFile: r.file,
+          evidence: r.staticAnalysis.contractCode.slice(0, 500),
+        });
+      }
+      // Collect threat intel findings with active exploits
+      if (r.threatIntel.length > 0) {
+        for (const intel of r.threatIntel) {
+          for (const finding of intel.searches) {
+            for (const f of finding.findings.filter((ff: { isAlert: boolean }) => ff.isAlert)) {
+              deepFindings.push({
+                category: 'deps',
+                severity: 'critical',
+                title: `Active exploit: ${f.title}`,
+                description: f.snippet,
+                packageName: intel.packageName,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (deepFindings.length > 0) {
+      const deepResults = await runDeepResearchBatch({
+        findings: deepFindings,
+        contractCode: results[0]?.staticAnalysis?.contractCode,
+        models: ['claude-sonnet-4-6', 'anthropic/claude-opus-4-6'],
+        maxFindings: 5,
+      });
+      const deepReport = formatDeepResearchReport(deepResults);
+      console.log(deepReport);
+
+      // Save deep research report
+      const { writeFile } = await import('fs/promises');
+      const deepPath = `threat-lab-deep-research-${Date.now()}.json`;
+      await writeFile(deepPath, JSON.stringify({ scannedAt: new Date().toISOString(), target, deepResults }, null, 2));
+      console.log(`  📄 Deep research report saved: ${deepPath}`);
+    } else {
+      console.log('  No critical findings to deep-research — scan is clean!');
+    }
+  }
 
   // ── Save JSON report ──
   const { writeFile } = await import('fs/promises');
