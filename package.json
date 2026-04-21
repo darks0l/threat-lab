@@ -1,0 +1,38 @@
+{
+  "name": "threat-lab",
+  "version": "0.1.0",
+  "description": "AI-powered threat research platform — deploy exploits, get AI analysis, build the collective pattern library",
+  "type": "module",
+  "bin": {
+    "threat-lab": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "dev": "vitest",
+    "lint": "eslint src --ext .ts",
+    "deploy:anvil": "ts-node scripts/deploy.ts --network anvil",
+    "deploy:sepolia": "ts-node scripts/deploy.ts --network base-sepolia",
+    "scenario:run": "ts-node scripts/runScenario.ts",
+    "submit": "ts-node scripts/submitFindings.ts"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
