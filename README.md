@@ -1,5 +1,13 @@
 # 🔬 Threat Lab
 
+[![Threat Assessment](https://img.shields.io/badge/threat%20analysis-4%20layers-ff4444?style=flat-square&logo=shield)](https://github.com/darks0l/threat-lab)
+[![Solidity](https://img.shields.io/badge/solidity-0.8-blue?style=flat-square&logo=solidity)](https://docs.soliditylang.org/)
+[![Foundry](https://img.shields.io/badge/foundry-deployed-ff1111?style=flat-square&logo=foundry)](https://book.getfoundry.sh/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](./LICENSE)
+[![Built with teeth](https://img.shields.io/badge/built%20with-teeth%20🌑-black?style=flat-square)](https://darksol.net)
+
+![Threat Lab Banner](assets/darksol-banner.png)
+
 > AI-powered security research platform — deploy exploit scenarios, get AI analysis, build the collective pattern library.
 
 **The threat landscape is a moving target.** MEV bots, flash loan attacks, oracle manipulation — by the time a new exploit pattern is understood well enough to defend against, dozens of protocols have already been hit. The window between "detected" and "exploited" is milliseconds. The window between "exploited" and "patched" is weeks.
@@ -178,9 +186,12 @@ Every submission expands the library. New patterns can be added by submitting a 
 ## Environment variables
 
 ```bash
-# Bankr LLM gateway (required for AI analysis)
+# Bankr LLM gateway (required for AI analysis + modelab deep research)
 BANKR_API_KEY=your_bankr_api_key
-BANKR_API_URL=https://gateway.bankr.gg/v1/chat/completions
+
+# Brave Search API (optional — enables Layer 2b live threat intel)
+# Get free key at: https://brave.com/search/api/
+BRAVE_SEARCH_API_KEY=your_brave_api_key
 
 # Anvil (defaults to http://127.0.0.1:8545)
 ANVIL_RPC=http://127.0.0.1:8545
