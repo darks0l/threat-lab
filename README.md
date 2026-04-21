@@ -38,10 +38,11 @@ npx threat-lab status
 # List scenarios + library
 npx threat-lab list
 
-# Unified scan — all 3 layers in one pass (recommended)
-npx threat-lab scan .              # full: static + deps + exploit sim
-npx threat-lab scan . --quick       # fast: static + deps (no Anvil needed)
-npx threat-lab scan ./contracts --no-deps   # contract only: static + exploit sim
+# Unified scan — all 4 layers in one pass (recommended)
+npx threat-lab scan .                  # full: static + deps + intel + exploit sim
+npx threat-lab scan . --quick          # fast: static + deps (no Anvil)
+npx threat-lab scan . --no-intel      # skip live threat intel
+npx threat-lab scan . --deep           # full + modelab deep research + patch generation
 
 # Analyze a Solidity file directly (static analysis only)
 npx threat-lab analyze ./contracts/MyVault.sol
@@ -208,7 +209,7 @@ npx threat-lab scan .
    Overall Threat: HIGH | Score: 80/100 | 3 files
 ```
 
-The unified `scan` command runs three independent passes in parallel per file:
+The unified `scan` command runs four independent passes:
 
 **Layer 1 — Static Analysis** *(always on)*
 Signature pattern matching against all known attack patterns + Bankr AI deep-read of contract code. Scans every `.sol` file in the target path recursively.
@@ -216,8 +217,25 @@ Signature pattern matching against all known attack patterns + Bankr AI deep-rea
 **Layer 2 — Dependency Audit** *(if `node_modules` present)*
 Queries OSV.dev, npm Security Advisories, and Socket.dev for known vulnerabilities and malicious packages. Active exploits (CVEs described as "actively exploited") are flagged at highest priority.
 
+**Layer 2b — Live Threat Intelligence** *(always on, requires internet)*
+After static vuln DB checks, searches the live web for package mentions in the last 14 days:
+- GitHub Security Advisories API (free, no key needed)
+- Brave Search API for X/Twitter and security blog discussions
+- Catches 0-days and active discussions NOT yet in CVE/OSV databases
+- Keywords: "actively exploited", "weaponized", "poc available", "zero-day"
+- Requires: `BRAVE_SEARCH_API_KEY` (get at brave.com/search/api)
+
 **Layer 3 — Exploit Simulation** *(if Anvil running + contract matched to scenario)*
 Matches your contract to a built-in scenario by code signature, deploys it to Anvil, executes the attack, and runs the transaction trace through AI for a verdict.
+
+**Deep Research** *(optional, `--deep` flag)*
+Runs flagged findings through modelab's multi-model research pipeline:
+- Parallel research across multiple AI models (Sonnet, Opus, GLM)
+- Root cause analysis + impact assessment
+- Concrete exploit scenarios with parameters
+- Patch/remediation code generation in Solidity
+- Validated fix output with confidence scores
+- Requires: `BANKR_API_KEY`
 
 Reports are saved to `threat-reports/<file>.<pattern>.md` and `threat-reports/simulation/<scenario>.json`.
 
