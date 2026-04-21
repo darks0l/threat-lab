@@ -12,6 +12,7 @@ export const AttackPatternSchema = z.enum([
   'integer-overflow',
   'delegatecall-injection',
   'permit-front-run',
+  'liquidation-attack',
   'unknown',
 ]);
 export type AttackPattern = z.infer<typeof AttackPatternSchema>;

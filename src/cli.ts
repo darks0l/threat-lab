@@ -21,6 +21,8 @@ import { submitFromFile } from './api.js';
 import { getLibraryStats, searchLibrary, exportLibrary } from './library.js';
 import { runThreatLab } from './runner.js';
 import { isAnvilRunning } from './executor.js';
+import { auditDependencies } from './audit.js';
+import { scanTarget } from './scanner.js';
 import { readFile } from 'fs/promises';
 
 const args = process.argv.slice(2);
@@ -216,6 +218,58 @@ async function main() {
       break;
     }
 
+    case 'audit': {
+      const targetPath = args[1] ?? '.';
+      const includeDev = !args.includes('--no-dev');
+      const withSocket = !args.includes('--no-socket');
+      const withNpm = !args.includes('--no-npm');
+
+      console.log(`\n🔍 Dependency Audit — ${targetPath}`);
+      console.log(`   npm audit: ${withNpm ? 'enabled' : 'disabled'}`);
+      console.log(`   Socket.dev: ${withSocket ? 'enabled' : 'disabled'}`);
+      console.log(`   include dev deps: ${includeDev}`);
+
+      try {
+        const result = await auditDependencies({
+          projectPath: targetPath,
+          includeDev,
+          socketDev: withSocket,
+          runNpmAudit: withNpm,
+        });
+
+        // Exit code reflects threat level
+        if (result.summary.threatLevel === 'critical' || result.summary.threatLevel === 'high') {
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(`\n❌ Audit failed: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'scan': {
+      const targetPath = args[1] ?? '.';
+      const quick = args.includes('--quick');
+      const noDeps = args.includes('--no-deps');
+      const noSim = args.includes('--no-sim');
+      const network = args.includes('--network') ? args[args.indexOf('--network') + 1] : 'anvil';
+
+      console.log(`\n🔬 Unified Security Scan — ${targetPath}`);
+      console.log(`   Static analysis:   always on (signature patterns + AI deep-read)`);
+      console.log(`   Dependency audit: ${noDeps ? 'OFF (--no-deps)' : 'OSV + npm advisories + Socket.dev'}`);
+      console.log(`   Exploit sim:      ${quick || noSim ? 'OFF (--quick / --no-sim)' : `Anvil deployment + AI analysis`}`);
+      console.log(`   Network:          ${network}`);
+
+      try {
+        await scanTarget({ target: targetPath, quick, noDeps, noSim, network });
+      } catch (err) {
+        console.error(`\n❌ Scan failed: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+      break;
+    }
+
     default: {
       console.log(`
 🔬 Threat Lab CLI — AI-powered security research platform
@@ -224,17 +278,25 @@ Usage:
   threat-lab list                          List available scenarios
   threat-lab run <scenario-id>            Execute scenario + AI analysis + library
   threat-lab run reentrancy-101 --network anvil
-  threat-lab analyze <contract.sol>        Analyze a Solidity file
-  threat-lab submit <submission.json>        Submit a finding
-  threat-lab library                       Show library stats
+  threat-lab analyze <contract.sol>        Analyze a Solidity file (AI only)
+  threat-lab scan <path>                  Unified scan: static + deps + exploit sim
+  threat-lab scan <path> --quick          Skip exploit simulation (faster)
+  threat-lab scan <path> --no-deps        Skip dependency audit
+  threat-lab audit <path>                 Dependency audit only (npm + OSV + Socket.dev)
+  threat-lab audit ./ --no-socket         Skip Socket.dev (no API key)
+  threat-lab submit <submission.json>     Submit a finding
+  threat-lab library                      Show library stats
   threat-lab library search <pattern>     Search pattern library
-  threat-lab patterns                      Show known attack patterns
-  threat-lab export                        Export library to JSON
-  threat-lab status                        Check Anvil / network status
+  threat-lab patterns                    Show known attack patterns
+  threat-lab export                      Export library to JSON
+  threat-lab status                      Check Anvil / network status
 
 Quick start:
   threat-lab status          # Check Anvil is running
   threat-lab list            # See available scenarios
+  threat-lab scan .          # Full unified scan (all 3 layers)
+  threat-lab scan . --quick  # Fast scan (skip exploit simulation)
+  threat-lab audit .         # Dependency audit only
   threat-lab run reentrancy-101  # Execute + analyze + add to library
 `);
       break;

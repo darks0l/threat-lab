@@ -91,6 +91,12 @@ const PATTERN_SIGNATURES: Record<AttackPattern, RegExp[]> = {
     /permit\(|EIP712.*permit/i,
     /signature.*replay/i,
   ],
+  'liquidation-attack': [
+    /liquidate\(|liquidatePosition/i,
+    /healthFactor|health.*factor/i,
+    /liquidation.*bonus/i,
+    /closeFactor|close.*factor/i,
+  ],
   'unknown': [],
 };
 

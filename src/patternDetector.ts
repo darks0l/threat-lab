@@ -67,6 +67,12 @@ const PATTERN_SIGNATURES: Record<AttackPattern, string[]> = {
     'nonce reuse',
     'invalid signature validation',
   ],
+  'liquidation-attack': [
+    'liquidation threshold',
+    'health factor below 1',
+    'oracle price manipulation',
+    'collateral seizure',
+  ],
   'unknown': [],
 };
 
@@ -80,6 +86,7 @@ const PATTERN_KEYWORDS: Record<AttackPattern, string[]> = {
   'integer-overflow': ['overflow', 'Safemath', 'unchecked', 'wrap'],
   'delegatecall-injection': ['delegatecall', 'implementation', 'proxy'],
   'permit-front-run': ['permit', 'EIP712', 'signature', 'replay'],
+  'liquidation-attack': ['liquidate', 'healthFactor', 'liquidation', 'collateral'],
   'unknown': [],
 };
 
