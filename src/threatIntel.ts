@@ -91,6 +91,14 @@ export async function runThreatIntel(
 
   console.log('\n🌐 Running live threat intelligence...');
 
+  // Log missing API key warnings once, outside the loop
+  if (!braveApiKey) {
+    console.log(`   ⚠️  BRAVE_SEARCH_API_KEY not set — live web search skipped (get key at brave.com/search/api)`);
+  }
+  if (!ghToken) {
+    console.log(`   ⚠️  GITHUB_TOKEN not set — GitHub Security Advisories search skipped`);
+  }
+
   for (const pkg of packages) {
     const searches: SearchResult[] = [];
     let hasActiveExploit = false;
@@ -102,14 +110,6 @@ export async function runThreatIntel(
       searches.push(ghResult);
       allFindings.push(...ghResult.findings);
       if (ghResult.findings.some(f => f.isAlert)) hasActiveExploit = true;
-    } else {
-      searches.push({
-        source: 'github-advisory',
-        query: pkg.name,
-        resultCount: 0,
-        findings: [],
-        freshestDate: null,
-      });
     }
 
     // ── Brave Search (requires API key) ──
@@ -118,18 +118,8 @@ export async function runThreatIntel(
       searches.push(braveResult);
       allFindings.push(...braveResult.findings);
       if (braveResult.findings.some(f => f.isAlert)) hasActiveExploit = true;
-    } else {
-      searches.push({
-        source: 'general',
-        query: pkg.name,
-        resultCount: 0,
-        findings: [],
-        freshestDate: null,
-      });
-      if (braveApiKey === '') {
-        console.log(`   ⚠️  BRAVE_SEARCH_API_KEY not set — live web search skipped (get key at brave.com/search/api)`);
-      }
     }
+
 
     // ── Overall severity ──
     const alertFindings = allFindings.filter(f => f.isAlert);

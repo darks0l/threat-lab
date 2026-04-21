@@ -62,20 +62,30 @@ export function getNetworkConfig(network: string): NetworkConfig {
         deployerPk: process.env.DEPLOYER_PRIVATE_KEY ?? ANVIL_DEPLOYER_PK,
         chainId: 31337,
       };
-    case 'base-sepolia':
+    case 'base-sepolia': {
+      const pk = process.env.DEPLOYER_PRIVATE_KEY ?? '';
+      if (!pk) {
+        throw new Error('DEPLOYER_PRIVATE_KEY is not set. Set it in .env to deploy to base-sepolia.');
+      }
       return {
         name: 'base-sepolia',
         rpcUrl: process.env.BASE_SEPOLIA_RPC ?? 'https://sepolia.base.org',
-        deployerPk: process.env.DEPLOYER_PRIVATE_KEY ?? '',
+        deployerPk: pk,
         chainId: 84532,
       };
-    case 'sepolia':
+    }
+    case 'sepolia': {
+      const pk = process.env.DEPLOYER_PRIVATE_KEY ?? '';
+      if (!pk) {
+        throw new Error('DEPLOYER_PRIVATE_KEY is not set. Set it in .env to deploy to sepolia.');
+      }
       return {
         name: 'sepolia',
         rpcUrl: process.env.SEPOLIA_RPC ?? 'https://rpc.sepolia.org',
-        deployerPk: process.env.DEPLOYER_PRIVATE_KEY ?? '',
+        deployerPk: pk,
         chainId: 11155111,
       };
+    }
     default:
       throw new Error(`Unknown network: ${network}`);
   }

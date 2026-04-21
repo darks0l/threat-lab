@@ -1,7 +1,28 @@
-node_modules/
+# Build artifacts
 dist/
 out/
 cache/
-.env
-.deploy-*.json
+
+# Test/reports
 *.log
+threat-lab-report-*.json
+threat-lab-deep-research-*.json
+library-test/
+*.test-output.*
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Library (not tracked — generated at runtime)
+library/
+library-test/
+
+# Editor
+.vscode/
+.idea/
+*.swp

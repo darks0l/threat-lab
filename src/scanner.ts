@@ -133,9 +133,14 @@ interface ConsolidatedFinding {
 
 // ── File discovery ─────────────────────────────────────────────────────────────
 
-async function findSolFiles(target: string): Promise<string[]> {
+export async function findSolFiles(target: string): Promise<string[]> {
   const files: string[] = [];
-  const targetStat = await stat(target);
+  let targetStat;
+  try {
+    targetStat = await stat(target);
+  } catch {
+    return files; // non-existent path → empty result
+  }
 
   if (targetStat.isFile()) {
     if (extname(target) === '.sol') files.push(target);
