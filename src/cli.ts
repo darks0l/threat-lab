@@ -134,15 +134,16 @@ async function main() {
 
     case 'patterns': {
       const patterns = [
-        { id: 'reentrancy',           desc: 'Recursive external calls before state updates',           severity: 'critical' },
-        { id: 'oracle-manipulation', desc: 'Flash loan price oracle attacks',                       severity: 'high'     },
-        { id: 'flash-loan-attack',    desc: 'Uncollateralized borrow + arbitrage in one tx',         severity: 'medium'   },
-        { id: 'access-control',       desc: 'Missing/incorrect permission checks',                   severity: 'critical' },
-        { id: 'front-running',        desc: 'Transaction order exploitation (MEV)',                  severity: 'medium'   },
-        { id: 'sandwich-attack',      desc: 'Front-run + back-run sandwich combo',                  severity: 'medium'   },
-        { id: 'integer-overflow',      desc: 'Arithmetic without Safemath/unchecked',               severity: 'high'     },
+        { id: 'reentrancy',             desc: 'Recursive external calls before state updates',           severity: 'critical' },
+        { id: 'oracle-manipulation',   desc: 'Flash loan price oracle attacks',                       severity: 'high'     },
+        { id: 'flash-loan-attack',      desc: 'Uncollateralized borrow + arbitrage in one tx',         severity: 'medium'   },
+        { id: 'access-control',         desc: 'Missing/incorrect permission checks',                   severity: 'critical' },
+        { id: 'front-running',          desc: 'Transaction order exploitation (MEV)',                  severity: 'medium'   },
+        { id: 'sandwich-attack',        desc: 'Front-run + back-run sandwich combo',                  severity: 'medium'   },
+        { id: 'integer-overflow',        desc: 'Arithmetic without Safemath/unchecked',               severity: 'high'     },
         { id: 'delegatecall-injection', desc: 'Storage corruption via delegatecall',                severity: 'critical' },
-        { id: 'permit-front-run',     desc: 'EIP712 permit signature replay',                        severity: 'medium'   },
+        { id: 'permit-front-run',       desc: 'EIP712 permit signature replay',                        severity: 'medium'   },
+        { id: 'liquidation-attack',     desc: 'Oracle manipulation + unfair liquidation seizure',       severity: 'high'     },
       ];
       console.log('\n📚 Known attack patterns:\n');
       for (const p of patterns) {

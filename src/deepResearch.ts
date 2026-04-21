@@ -55,7 +55,8 @@ export interface PatchFix {
 
 const BANKR_API_URL = process.env.BANKR_API_URL ?? 'https://gateway.bankr.gg/v1/chat/completions';
 const BANKR_API_KEY = process.env.BANKR_API_KEY ?? '';
-const MODELS = ['claude-sonnet-4-6', 'anthropic/claude-opus-4-6', 'ollama-cloud/glm-4-7'];
+const DEFAULT_MODELS = ['claude-sonnet-4-6', 'anthropic/claude-opus-4-6'];
+const FALLBACK_MODELS = ['anthropic/claude-sonnet-4-6']; // minimum viable set
 
 // ── System prompt for deep research ──────────────────────────────────────────
 
@@ -222,7 +223,7 @@ export interface DeepResearchOptions {
 export async function runDeepResearch(
   options: DeepResearchOptions,
 ): Promise<DeepResearchResult> {
-  const { finding, contractCode, models = MODELS } = options;
+  const { finding, contractCode, models = DEFAULT_MODELS } = options;
 
   console.log(`\n  [deep] Researching: ${finding.title}`);
 
@@ -294,7 +295,7 @@ export interface DeepResearchBatchOptions {
 export async function runDeepResearchBatch(
   options: DeepResearchBatchOptions,
 ): Promise<DeepResearchResult[]> {
-  const { findings, contractCode, models = MODELS, maxFindings = 5 } = options;
+  const { findings, contractCode, models = DEFAULT_MODELS, maxFindings = 5 } = options;
 
   // Limit to highest-severity findings first
   const severityOrder = ['critical', 'high', 'medium', 'low', 'informational'];

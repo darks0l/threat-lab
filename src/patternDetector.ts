@@ -4,6 +4,7 @@
  */
 
 import type { AttackPattern, ThreatReport, Finding } from './schemas.js';
+import { PATTERN_SIGNATURES, PATTERN_KEYWORDS, inferPattern } from './patternSignatures.js';
 
 export interface PatternMatch {
   pattern: AttackPattern;
@@ -12,83 +13,8 @@ export interface PatternMatch {
   similarReports: string[]; // reportIds of similar past findings
 }
 
-const PATTERN_SIGNATURES: Record<AttackPattern, string[]> = {
-  'reentrancy': [
-    'external call before state update',
-    'call{value:} in withdraw function',
-    'no reentrancy guard',
-    'recursive call pattern',
-  ],
-  'oracle-manipulation': [
-    'spot price oracle',
-    ' Uniswap V2 pair reserves',
-    'no TWAP smoothing',
-    'flash loan price impact',
-  ],
-  'flash-loan-attack': [
-    'flash loan callback',
-    'Balancer vault',
-    'arbitrage in single transaction',
-    'no collateral required',
-  ],
-  'access-control': [
-    'missing access control check',
-    'owner-only function',
-    'missing requiresAuth',
-    'unchecked external call privilege',
-  ],
-  'front-running': [
-    'gas price oracle',
-    'MEV extraction',
-    'arbitrage sandwich',
-    'tx order dependency',
-  ],
-  'sandwich-attack': [
-    'front-run + back-run',
-    'borrow-swap-repay pattern',
-    'uniswap v2 flash swap',
-    'slippage exploitation',
-  ],
-  'integer-overflow': [
-    'unchecked arithmetic',
-    'uint256 addition overflow',
-    'Safemath not used',
-    'wrapping arithmetic',
-  ],
-  'delegatecall-injection': [
-    'delegatecall to user-supplied address',
-    'implementation slot storage',
-    'proxy upgrade pattern',
-    'unused implementation address',
-  ],
-  'permit-front-run': [
-    'EIP712 permit signature',
-    'signature replay attack',
-    'nonce reuse',
-    'invalid signature validation',
-  ],
-  'liquidation-attack': [
-    'liquidation threshold',
-    'health factor below 1',
-    'oracle price manipulation',
-    'collateral seizure',
-  ],
-  'unknown': [],
-};
-
-const PATTERN_KEYWORDS: Record<AttackPattern, string[]> = {
-  'reentrancy': ['reentranc', 'recursive', 'callback', 'call{value'],
-  'oracle-manipulation': ['getReserves', 'spot price', 'manipulat', 'twap'],
-  'flash-loan-attack': ['flashLoan', 'flash loan', 'borrow', 'callback'],
-  'access-control': ['onlyOwner', 'onlyAdmin', 'auth', 'permission'],
-  'front-running': ['gasPrice', 'front.run', 'MEV', 'arbitrage'],
-  'sandwich-attack': ['sandwich', 'front.run', 'back.run', 'slippage'],
-  'integer-overflow': ['overflow', 'Safemath', 'unchecked', 'wrap'],
-  'delegatecall-injection': ['delegatecall', 'implementation', 'proxy'],
-  'permit-front-run': ['permit', 'EIP712', 'signature', 'replay'],
-  'liquidation-attack': ['liquidate', 'healthFactor', 'liquidation', 'collateral'],
-  'unknown': [],
-};
+// PATTERN_SIGNATURES and PATTERN_KEYWORDS now imported from patternSignatures.ts
+// (single source of truth — no more duplication)
 
 /**
  * Match a text (code, trace, or report) against known attack signatures.

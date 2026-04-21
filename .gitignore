@@ -1,29 +1,25 @@
-# Build artifacts
+# Build outputs
 dist/
-out/
-cache/
+node_modules/
+
+# Reports and temporary files
+threat-reports/
+library/index.json
+library/reports/
+library/submissions/
+
+# Keys and secrets
 .keys/
-
-# Test/reports
-*.log
-threat-lab-report-*.json
-threat-lab-deep-research-*.json
-library-test/
-*.test-output.*
-
-# Env
 .env
 .env.local
 
-# OS
+# Logs
+*.log
+
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# Library (not tracked — generated at runtime)
-library/
-library-test/
-
-# Editor
+# IDE files
 .vscode/
 .idea/
-*.swp

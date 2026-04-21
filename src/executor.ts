@@ -181,7 +181,6 @@ async function executeStep(
             const key = arg.slice(1, -1);
             const entry = Array.from(contracts.entries()).find(([k]) => k.toLowerCase() === key.toLowerCase());
             if (!entry) {
-              console.error(`  [DEBUG] Available contracts: ${Array.from(contracts.keys()).join(', ')}`);
               throw new Error(`Placeholder {${key}} not found in deployed contracts`);
             }
             return entry[1].address;

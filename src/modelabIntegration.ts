@@ -156,20 +156,7 @@ function parseAnalysis(text: string): {
   };
 }
 
-// ── Pattern inference ──────────────────────────────────────────────────────────
-
-function inferPattern(text: string): AttackPattern {
-  const lower = text.toLowerCase();
-  if (/reentranc/.test(lower)) return 'reentrancy';
-  if (/oracle.*manip|price.*manip|spot.*price|getReserves/.test(lower)) return 'oracle-manipulation';
-  if (/flash.?loan|borrow.*flash|flashSwap/.test(lower)) return 'flash-loan-attack';
-  if (/access.?control|onlyOwner|requiresAuth|privilege|permission/.test(lower)) return 'access-control';
-  if (/front.?run|mev|miner.*extract|gas.?price|sandwich/.test(lower)) return 'sandwich-attack';
-  if (/integer.*over|overflow|unchecked.*arith|Safemath/.test(lower)) return 'integer-overflow';
-  if (/delegatecall|implementation.*storage|proxy.*upgrade/.test(lower)) return 'delegatecall-injection';
-  if (/permit.*replay|EIP712.*permit|signature.*replay/.test(lower)) return 'permit-front-run';
-  return 'unknown';
-}
+import { inferPattern } from './patternSignatures.js';
 
 // ── Main analysis ─────────────────────────────────────────────────────────────
 

@@ -7,6 +7,7 @@
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import type { Finding, ThreatReport, AttackPattern, Severity } from './schemas.js';
+import { PATTERN_REGEX, inferPattern } from './patternSignatures.js';
 
 // Bankr LLM gateway — set BANKR_API_KEY env var to enable AI analysis
 // Falls back to signature-based detection if key not set
@@ -41,69 +42,12 @@ ${!txTrace ? 'No transaction was executed. Based on the contract code above, ide
 Respond with your analysis.`;
 }
 
-// ── Pattern matchers ─────────────────────────────────────────────────────────
-
-const PATTERN_SIGNATURES: Record<AttackPattern, RegExp[]> = {
-  'reentrancy': [
-    /\bcall\{value\s*:/,
-    /\.(call|transfer|send)\s*\(\s*\)/,
-    /msg\.sender\.call/,
-    /_update.*before.*call/,
-  ],
-  'oracle-manipulation': [
-    /getReserves\(\)/,
-    /spot.*price/i,
-    /uint256.*reserve/,
-    /price.*feed/i,
-  ],
-  'flash-loan-attack': [
-    /flashLoan/i,
-    /onFlashLoan/i,
-    /flash/i,
-    / balancer /i,
-  ],
-  'access-control': [
-    /onlyOwner|onlyAdmin|requiresAuth|auth_\w+/,
-    /msg\.sender\s*!=\s*owner/,
-    /public.*without.*check/i,
-  ],
-  'front-running': [
-    /gasPrice|gas.*price/i,
-    /MEV|miner.*extract/i,
-    /arbitrage/i,
-  ],
-  'sandwich-attack': [
-    /front.*run|back.*run/i,
-    /sandwich/i,
-    /borrow.*swap.*repay/i,
-  ],
-  'integer-overflow': [
-    /uint256.*\+.*uint256/,
-    /safemath/i,
-    /overflow/i,
-  ],
-  'delegatecall-injection': [
-    /delegatecall/i,
-    /implementation.*storage/i,
-    /proxy.*upgrade/i,
-  ],
-  'permit-front-run': [
-    /permit\(|EIP712.*permit/i,
-    /signature.*replay/i,
-  ],
-  'liquidation-attack': [
-    /liquidate\(|liquidatePosition/i,
-    /healthFactor|health.*factor/i,
-    /liquidation.*bonus/i,
-    /closeFactor|close.*factor/i,
-  ],
-  'unknown': [],
-};
+// ── Pattern matchers (shared from patternSignatures.ts) ─────────────────────
 
 function detectPatternBySignature(code: string): AttackPattern {
   const matches: { pattern: AttackPattern; count: number }[] = [];
 
-  for (const [pattern, regexes] of Object.entries(PATTERN_SIGNATURES)) {
+  for (const [pattern, regexes] of Object.entries(PATTERN_REGEX)) {
     const count = regexes.filter(r => r.test(code)).length;
     if (count > 0) matches.push({ pattern: pattern as AttackPattern, count });
   }
@@ -230,14 +174,4 @@ function extractRecommendations(text: string): string[] {
   return recs.length > 0 ? recs : ['Conduct a professional audit', 'Use static analysis tools'];
 }
 
-function inferPattern(summary: string): AttackPattern {
-  const lower = summary.toLowerCase();
-  if (/reentranc/.test(lower)) return 'reentrancy';
-  if (/oracle.*manip|price.*manip/.test(lower)) return 'oracle-manipulation';
-  if (/flash.?loan/.test(lower)) return 'flash-loan-attack';
-  if (/access.?control|permission/.test(lower)) return 'access-control';
-  if (/front.?run|mev|sandwich/.test(lower)) return 'sandwich-attack';
-  if (/integer.*over|overflow/.test(lower)) return 'integer-overflow';
-  if (/delegatecall/.test(lower)) return 'delegatecall-injection';
-  return 'unknown';
-}
+// inferPattern now imported from patternSignatures.ts
