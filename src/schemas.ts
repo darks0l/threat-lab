@@ -53,11 +53,11 @@ export const ScenarioSchema = z.object({
   description: z.string(),
   pattern: AttackPatternSchema,
   severity: SeveritySchema,
-  templateContract: z.string(), // Solidity contract name
+  templateContract: z.string().optional(), // Solidity contract name
   deployParams: z.record(z.unknown()).optional(),
   exploitSteps: z.array(z.object({
     step: z.number(),
-    action: z.enum(['deploy', 'call', 'send', 'flash-loan', 'swap', 'manipulate']),
+    action: z.enum(['deploy', 'call', 'send', 'flash-loan', 'swap', 'manipulate', 'fund', 'log']),
     target: z.string().optional(),
     method: z.string().optional(),
     args: z.array(z.unknown()).optional(),

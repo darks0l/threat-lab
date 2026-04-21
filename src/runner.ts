@@ -132,7 +132,7 @@ export async function runThreatLab(
   );
 
   // 5. Run AI analysis
-  const contractCode = CONTRACT_CODE_MAP[scenario.templateContract] ?? DEFAULT_CONTRACT_CODE;
+  const contractCode = CONTRACT_CODE_MAP[scenario.templateContract ?? ''] ?? DEFAULT_CONTRACT_CODE;
   let analysisResults: Awaited<ReturnType<typeof analyzeWithModelab>> = [];
   let bestReport: ThreatReport | null = null;
 
