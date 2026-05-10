@@ -1,10 +1,26 @@
 {
   "name": "threat-lab",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AI-powered threat research platform — deploy exploits, get AI analysis, build the collective pattern library",
   "type": "module",
   "bin": {
     "threat-lab": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "assets/darksol-banner.png",
+    "contracts/**/*.sol",
+    "src/signatures/**/*.json",
+    "lib/**/*.js"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/darks0l/threat-lab",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darks0l/threat-lab.git"
   },
   "scripts": {
     "build": "tsc",
