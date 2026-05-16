@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.3.1 — 2026-05-15
+
+- feat: add `scan --compare <baseline.json>` report diffing for saved scan artifacts
+- feat: add `scan --fail-on <severity>` security gates for CI/release enforcement
+- test: cover scan diffing and severity-threshold helpers
+- docs: document baseline comparisons and security-gate usage
+
 ## v0.3.0 — 2026-05-10
 
 - feat: first polished npm/GitHub release pass for Threat Lab

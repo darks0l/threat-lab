@@ -17,7 +17,7 @@
  * Output: unified threat report with per-category findings and overall severity.
  */
 
-import { readFile, readdir, stat } from 'fs/promises';
+import { readFile, readdir, stat, writeFile } from 'fs/promises';
 import { join, extname, relative } from 'path';
 import { analyzeThreat } from './analyzer.js';
 import { detectPatterns, type PatternMatch } from './patternDetector.js';
@@ -31,7 +31,7 @@ import type { ThreatReport, AttackPattern, Severity } from './schemas.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface ScanResult {
+export interface ScanResult {
   file: string;
   staticAnalysis: StaticResult | null;
   dependencyAudit: DepAuditResult | null;
@@ -95,8 +95,20 @@ const SEVERITY_SCORE: Record<Severity, number> = {
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'informational'];
 
+function severityIndex(severity: Severity): number {
+  return SEVERITY_ORDER.indexOf(severity);
+}
+
+export function severityMeetsOrExceeds(actual: Severity, threshold: Severity): boolean {
+  return severityIndex(actual) <= severityIndex(threshold);
+}
+
 function worstSeverity(a: Severity, b: Severity): Severity {
-  return SEVERITY_ORDER[Math.min(SEVERITY_ORDER.indexOf(a), SEVERITY_ORDER.indexOf(b))];
+  return SEVERITY_ORDER[Math.min(severityIndex(a), severityIndex(b))];
+}
+
+export function getWorstScanSeverity(results: ScanResult[]): Severity {
+  return results.reduce<Severity>((worst, result) => worstSeverity(worst, result.overallSeverity), 'informational');
 }
 
 function computeThreatScore(results: ScanResult): number {
@@ -363,9 +375,9 @@ async function runExploitSim(filePath: string, network: string): Promise<Exploit
 
 // ── Report generation ─────────────────────────────────────────────────────────
 
-function generateReport(results: ScanResult[]): string {
+export function generateReport(results: ScanResult[]): string {
   const lines: string[] = [];
-  const overallWorst = results.reduce<Severity>((worst, r) => worstSeverity(worst, r.overallSeverity), 'informational');
+  const overallWorst = getWorstScanSeverity(results);
   const avgScore = results.length > 0 ? Math.round(results.reduce((s, r) => s + r.threatScore, 0) / results.length) : 0;
 
   lines.push('');
@@ -465,10 +477,219 @@ export interface ScanOptions {
   network?: string;
   models?: string[];
   deep?: boolean;         // run deep research on flagged findings via modelab
+  outputPath?: string;
+}
+
+export interface ScanPayload {
+  scannedAt: string;
+  target: string;
+  results: ScanResult[];
+}
+
+export interface ScanDiffEntry {
+  file: string;
+  status: 'new' | 'resolved' | 'changed' | 'unchanged';
+  currentSeverity?: Severity;
+  previousSeverity?: Severity;
+  currentScore?: number;
+  previousScore?: number;
+}
+
+export interface ScanDiffSummary {
+  baselineTarget: string;
+  currentTarget: string;
+  baselineScannedAt: string;
+  currentScannedAt: string;
+  added: number;
+  resolved: number;
+  changed: number;
+  unchanged: number;
+  entries: ScanDiffEntry[];
+}
+
+export function buildScanPayload(target: string, results: ScanResult[]): ScanPayload {
+  return {
+    scannedAt: new Date().toISOString(),
+    target,
+    results,
+  };
+}
+
+function buildMarkdownReport(target: string, results: ScanResult[]): string {
+  const payload = buildScanPayload(target, results);
+  const overallWorst = getWorstScanSeverity(results);
+  const avgScore = results.length > 0 ? Math.round(results.reduce((s, r) => s + r.threatScore, 0) / results.length) : 0;
+  const lines: string[] = [];
+
+  lines.push('# Threat Lab Scan Report');
+  lines.push('');
+  lines.push(`- Scanned at: ${payload.scannedAt}`);
+  lines.push(`- Target: ${target}`);
+  lines.push(`- Overall threat: ${overallWorst.toUpperCase()}`);
+  lines.push(`- Average score: ${avgScore}/100`);
+  lines.push(`- Files scanned: ${results.length}`);
+  lines.push('');
+
+  for (const r of results) {
+    lines.push(`## ${r.file}`);
+    lines.push(`- Severity: ${r.overallSeverity}`);
+    lines.push(`- Threat score: ${r.threatScore}/100`);
+
+    if (r.staticAnalysis?.aiReport) {
+      lines.push(`- AI pattern: ${r.staticAnalysis.aiReport.attackPattern}`);
+      lines.push(`- AI confidence: ${(r.staticAnalysis.aiReport.confidence * 100).toFixed(0)}%`);
+      lines.push(`- AI summary: ${r.staticAnalysis.aiReport.summary}`);
+    }
+
+    if (r.staticAnalysis?.patterns.length) {
+      lines.push(`- Pattern matches: ${r.staticAnalysis.patterns.map(p => `${p.pattern} (${(p.confidence * 100).toFixed(0)}%)`).join(', ')}`);
+    }
+
+    if (r.dependencyAudit) {
+      lines.push(`- Dependency audit: ${r.dependencyAudit.threatLevel} (${r.dependencyAudit.vulns.length + r.dependencyAudit.advisories.length} issue(s))`);
+    }
+
+    if (r.threatIntel.length) {
+      const active = r.threatIntel.filter(t => t.hasActiveExploit).length;
+      lines.push(`- Threat intel packages flagged: ${r.threatIntel.length}${active ? ` (${active} active exploit)` : ''}`);
+    }
+
+    if (r.exploitSim) {
+      lines.push(`- Exploit simulation: ${r.exploitSim.scenarioName} (${r.exploitSim.success ? 'successful' : 'failed'})`);
+    }
+
+    if (r.recommendations.length) {
+      lines.push('- Recommendations:');
+      for (const rec of r.recommendations) lines.push(`  - ${rec}`);
+    }
+
+    if (r.errors.length) {
+      lines.push('- Errors:');
+      for (const err of r.errors) lines.push(`  - ${err}`);
+    }
+
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+export async function loadScanPayload(path: string): Promise<ScanPayload> {
+  const raw = await readFile(path, 'utf-8');
+  return JSON.parse(raw) as ScanPayload;
+}
+
+export function compareScanPayloads(current: ScanPayload, baseline: ScanPayload): ScanDiffSummary {
+  const currentMap = new Map(current.results.map(result => [result.file, result]));
+  const baselineMap = new Map(baseline.results.map(result => [result.file, result]));
+  const files = [...new Set([...currentMap.keys(), ...baselineMap.keys()])].sort();
+
+  const entries: ScanDiffEntry[] = files.map((file) => {
+    const currentResult = currentMap.get(file);
+    const baselineResult = baselineMap.get(file);
+
+    if (currentResult && !baselineResult) {
+      return {
+        file,
+        status: 'new',
+        currentSeverity: currentResult.overallSeverity,
+        currentScore: currentResult.threatScore,
+      };
+    }
+
+    if (!currentResult && baselineResult) {
+      return {
+        file,
+        status: 'resolved',
+        previousSeverity: baselineResult.overallSeverity,
+        previousScore: baselineResult.threatScore,
+      };
+    }
+
+    const changed = currentResult!.overallSeverity !== baselineResult!.overallSeverity
+      || currentResult!.threatScore !== baselineResult!.threatScore;
+
+    return {
+      file,
+      status: changed ? 'changed' : 'unchanged',
+      currentSeverity: currentResult!.overallSeverity,
+      previousSeverity: baselineResult!.overallSeverity,
+      currentScore: currentResult!.threatScore,
+      previousScore: baselineResult!.threatScore,
+    };
+  });
+
+  return {
+    baselineTarget: baseline.target,
+    currentTarget: current.target,
+    baselineScannedAt: baseline.scannedAt,
+    currentScannedAt: current.scannedAt,
+    added: entries.filter(entry => entry.status === 'new').length,
+    resolved: entries.filter(entry => entry.status === 'resolved').length,
+    changed: entries.filter(entry => entry.status === 'changed').length,
+    unchanged: entries.filter(entry => entry.status === 'unchanged').length,
+    entries,
+  };
+}
+
+export function formatScanDiff(summary: ScanDiffSummary): string {
+  const lines: string[] = [];
+  lines.push('');
+  lines.push('╔═══════════════════════════════════════════════════════════════════╗');
+  lines.push('║                 🔁 THREAT LAB — SCAN DIFF                       ║');
+  lines.push('╚═══════════════════════════════════════════════════════════════════╝');
+  lines.push('');
+  lines.push(`  Baseline: ${summary.baselineTarget} @ ${summary.baselineScannedAt}`);
+  lines.push(`  Current:  ${summary.currentTarget} @ ${summary.currentScannedAt}`);
+  lines.push('');
+  lines.push(`  New: ${summary.added}  |  Resolved: ${summary.resolved}  |  Changed: ${summary.changed}  |  Unchanged: ${summary.unchanged}`);
+  lines.push('');
+
+  for (const entry of summary.entries.filter(item => item.status !== 'unchanged')) {
+    if (entry.status === 'new') {
+      lines.push(`  ➕ ${entry.file}`);
+      lines.push(`     New finding: ${entry.currentSeverity} (${entry.currentScore}/100)`);
+      continue;
+    }
+    if (entry.status === 'resolved') {
+      lines.push(`  ✅ ${entry.file}`);
+      lines.push(`     Resolved: ${entry.previousSeverity} (${entry.previousScore}/100)`);
+      continue;
+    }
+    lines.push(`  🔄 ${entry.file}`);
+    lines.push(`     ${entry.previousSeverity} (${entry.previousScore}/100) → ${entry.currentSeverity} (${entry.currentScore}/100)`);
+  }
+
+  if (summary.entries.every(item => item.status === 'unchanged')) {
+    lines.push('  No material scan deltas.');
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+async function saveScanArtifacts(target: string, results: ScanResult[], outputPath?: string): Promise<void> {
+  const payload = buildScanPayload(target, results);
+
+  if (outputPath) {
+    const normalized = outputPath.toLowerCase();
+    if (normalized.endsWith('.md')) {
+      await writeFile(outputPath, buildMarkdownReport(target, results), 'utf-8');
+      console.log(`  📄 Scan report saved: ${outputPath}`);
+      return;
+    }
+    await writeFile(outputPath, JSON.stringify(payload, null, 2), 'utf-8');
+    console.log(`  📄 Scan report saved: ${outputPath}`);
+    return;
+  }
+
+  const jsonPath = `threat-lab-report-${Date.now()}.json`;
+  await writeFile(jsonPath, JSON.stringify(payload, null, 2), 'utf-8');
+  console.log(`  📄 JSON report saved: ${jsonPath}`);
 }
 
 export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
-  const { target, quick = false, noDeps = false, noSim = false, noIntel = false, network = 'anvil', deep = false } = options;
+  const { target, quick = false, noDeps = false, noSim = false, noIntel = false, network = 'anvil', deep = false, outputPath } = options;
 
   console.log(`\n🔬 Threat Lab — Scanning ${target}`);
   if (!noDeps) console.log('   [1/4] Dependency audit  (OSV + npm advisories + Socket.dev)');
@@ -629,7 +850,6 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
       console.log(deepReport);
 
       // Save deep research report
-      const { writeFile } = await import('fs/promises');
       const deepPath = `threat-lab-deep-research-${Date.now()}.json`;
       await writeFile(deepPath, JSON.stringify({ scannedAt: new Date().toISOString(), target, deepResults }, null, 2));
       console.log(`  📄 Deep research report saved: ${deepPath}`);
@@ -638,11 +858,8 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
     }
   }
 
-  // ── Save JSON report ──
-  const { writeFile } = await import('fs/promises');
-  const jsonPath = `threat-lab-report-${Date.now()}.json`;
-  await writeFile(jsonPath, JSON.stringify({ scannedAt: new Date().toISOString(), target, results }, null, 2));
-  console.log(`  📄 JSON report saved: ${jsonPath}`);
+  // ── Save report artifact ──
+  await saveScanArtifacts(target, results, outputPath);
 
   const totalMs = Date.now() - startAll;
   console.log(`\n  ✅ Scan complete in ${(totalMs / 1000).toFixed(1)}s`);

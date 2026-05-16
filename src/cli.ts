@@ -22,7 +22,7 @@ import { getLibraryStats, searchLibrary, exportLibrary } from './library.js';
 import { runThreatLab } from './runner.js';
 import { isAnvilRunning } from './executor.js';
 import { auditDependencies } from './audit.js';
-import { scanTarget } from './scanner.js';
+import { scanTarget, loadScanPayload, compareScanPayloads, formatScanDiff, getWorstScanSeverity, severityMeetsOrExceeds } from './scanner.js';
 import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
@@ -285,6 +285,10 @@ async function main() {
       const network = args.includes('--network') ? args[args.indexOf('--network') + 1] : 'anvil';
       const outputIdx = args.indexOf('--output');
       const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : undefined;
+      const compareIdx = args.indexOf('--compare');
+      const comparePath = compareIdx !== -1 ? args[compareIdx + 1] : undefined;
+      const failOnIdx = args.indexOf('--fail-on');
+      const failOnSeverity = failOnIdx !== -1 ? args[failOnIdx + 1] as import('./schemas.js').Severity : undefined;
 
       console.log(`\n🔬 Unified Security Scan — ${targetPath}`);
       console.log(`   Static analysis:   always on (signature patterns + AI deep-read)`);
@@ -293,6 +297,14 @@ async function main() {
       console.log(`   Exploit sim:     ${quick || noSim ? 'OFF (--quick / --no-sim)' : `Anvil deployment + AI analysis`}`);
       console.log(`   Deep research:   ${deep ? 'ON (modelab multi-model + patch generation)' : 'OFF (use --deep to enable)'}`);
       console.log(`   Network:         ${network}`);
+      if (failOnSeverity) console.log(`   Fail threshold:  ${failOnSeverity}`);
+
+      const validFailThresholds = new Set(['critical', 'high', 'medium', 'low', 'informational']);
+      if (failOnSeverity && !validFailThresholds.has(failOnSeverity)) {
+        console.error(`\n❌ Invalid --fail-on threshold: ${failOnSeverity}`);
+        console.error('   Use one of: critical, high, medium, low, informational');
+        process.exit(1);
+      }
 
       if (deep && !process.env.BANKR_API_KEY) {
         console.error(`\n❌ --deep requires BANKR_API_KEY to be set`);
@@ -300,7 +312,26 @@ async function main() {
       }
 
       try {
-        await scanTarget({ target: targetPath, quick, noDeps, noSim, noIntel, network, deep });
+        const results = await scanTarget({ target: targetPath, quick, noDeps, noSim, noIntel, network, deep, outputPath });
+        if (comparePath) {
+          const baseline = await loadScanPayload(comparePath);
+          const current = {
+            scannedAt: new Date().toISOString(),
+            target: targetPath,
+            results,
+          };
+          const diff = compareScanPayloads(current, baseline);
+          console.log(formatScanDiff(diff));
+        }
+
+        if (failOnSeverity) {
+          const worst = getWorstScanSeverity(results);
+          if (severityMeetsOrExceeds(worst, failOnSeverity)) {
+            console.error(`\n❌ Security gate failed: worst severity ${worst} meets/exceeds threshold ${failOnSeverity}`);
+            process.exit(1);
+          }
+          console.log(`\n✅ Security gate passed: worst severity ${worst} is below threshold ${failOnSeverity}`);
+        }
       } catch (err) {
         console.error(`\n❌ Scan failed: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
@@ -322,6 +353,9 @@ Usage:
   threat-lab scan <path> --no-deps        Skip dependency audit
   threat-lab scan <path> --no-intel       Skip live threat intel (Layer 2b)
   threat-lab scan <path> --deep           Run deep research on flagged findings (modelab)
+  threat-lab scan <path> --output report.md  Save scan report to .md or .json
+  threat-lab scan <path> --compare old.json  Compare current scan to a prior JSON report
+  threat-lab scan <path> --fail-on high     Exit non-zero when scan severity hits threshold
   threat-lab audit <path>                 Dependency audit only (npm + OSV + Socket.dev)
   threat-lab audit ./ --no-socket         Skip Socket.dev (no API key)
   threat-lab submit <submission.json>     Submit a finding
@@ -337,6 +371,8 @@ Quick start:
   threat-lab scan .          # Full unified scan (all 4 layers)
   threat-lab scan . --quick  # Fast scan (skip exploit simulation)
   threat-lab scan . --deep   # Full scan + modelab deep research + patch generation
+  threat-lab scan . --compare baseline.json # Show what changed since the last scan
+  threat-lab scan . --fail-on high          # CI gate: fail on high/critical findings
   threat-lab audit .         # Dependency audit only
   threat-lab run reentrancy-101  # Execute + analyze + add to library
 

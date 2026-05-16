@@ -1,0 +1,16 @@
+src/
+tests/
+test/
+scripts/
+cache/
+out/
+node_modules/
+.vitest/
+coverage/
+library/
+foundry.toml
+tsconfig.json
+vitest.config.*
+*.log
+threat-lab-report-*.json
+threat-lab-deep-research-*.json

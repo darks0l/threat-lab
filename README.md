@@ -4,8 +4,8 @@ Built by DARKSOL 🌑
 # 🔬 Threat Lab
 
 [![Threat Assessment](https://img.shields.io/badge/threat%20analysis-4%20layers-ff4444?style=flat-square&logo=shield)](https://github.com/darks0l/threat-lab)
-[![npm version](https://img.shields.io/badge/npm-0.3.0-orange?style=flat-square)](https://www.npmjs.com/package/threat-lab)
-[![tests](https://img.shields.io/badge/tests-89%20passing-brightgreen?style=flat-square)](https://github.com/darks0l/threat-lab)
+[![npm version](https://img.shields.io/badge/npm-0.3.1-orange?style=flat-square)](https://www.npmjs.com/package/threat-lab)
+[![tests](https://img.shields.io/badge/tests-93%20passing-brightgreen?style=flat-square)](https://github.com/darks0l/threat-lab)
 [![Solidity](https://img.shields.io/badge/solidity-0.8-blue?style=flat-square&logo=solidity)](https://docs.soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/foundry-deployed-ff1111?style=flat-square&logo=foundry)](https://book.getfoundry.sh/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](./LICENSE)
@@ -64,6 +64,9 @@ npx threat-lab scan .                  # full: static + deps + intel + exploit s
 npx threat-lab scan . --quick          # fast: static + deps (no Anvil)
 npx threat-lab scan . --no-intel      # skip live threat intel
 npx threat-lab scan . --deep           # full + modelab deep research + patch generation
+npx threat-lab scan . --output report.md # save a reusable markdown report
+npx threat-lab scan . --compare baseline.json # see what changed vs a prior scan
+npx threat-lab scan . --fail-on high # fail CI/builds on high+ findings
 
 # Analyze a Solidity file directly (static analysis only)
 npx threat-lab analyze ./contracts/MyVault.sol
@@ -258,6 +261,20 @@ Runs flagged findings through modelab's multi-model research pipeline:
 - Parallel research across multiple AI models (Sonnet, Opus, GLM)
 - Root cause analysis + impact assessment
 - Concrete exploit scenarios with parameters
+
+**Report Export**
+- `--output report.json` saves the full machine-readable scan payload where you want it
+- `--output report.md` saves a readable markdown summary for sharing, review, or diffing between runs
+
+**Baseline Diffing**
+- `--compare baseline.json` compares the current scan to a previous JSON export
+- highlights new findings, resolved files, and files whose severity/score changed
+- best used with saved `--output report.json` artifacts between commits or releases
+
+**Security Gates**
+- `--fail-on high` exits non-zero when the worst scan severity is `high` or `critical`
+- supports: `critical`, `high`, `medium`, `low`, `informational`
+- useful for CI, release checks, and protected deployment workflows
 - Patch/remediation code generation in Solidity
 - Validated fix output with confidence scores
 - Requires: `BANKR_API_KEY`
