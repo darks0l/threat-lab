@@ -57,6 +57,100 @@ function detectPatternBySignature(code: string): AttackPattern {
   return matches[0].pattern;
 }
 
+function extractEvidenceSnippets(contractCode: string, pattern: AttackPattern): string[] {
+  const lines = contractCode.split(/\r?\n/);
+  const regexes = PATTERN_REGEX[pattern] ?? [];
+  const snippets: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!regexes.some((regex) => regex.test(line))) continue;
+    const start = Math.max(0, i - 1);
+    const end = Math.min(lines.length, i + 2);
+    const block = lines.slice(start, end)
+      .map((entry, idx) => `${start + idx + 1}: ${entry.trimEnd()}`)
+      .join('\n')
+      .trim();
+    if (block && !snippets.includes(block)) snippets.push(block);
+    if (snippets.length >= 3) break;
+  }
+
+  return snippets;
+}
+
+function fallbackSeverityFor(pattern: AttackPattern): Severity {
+  switch (pattern) {
+    case 'reentrancy':
+    case 'access-control':
+    case 'delegatecall-injection':
+      return 'critical';
+    case 'oracle-manipulation':
+    case 'flash-loan-attack':
+    case 'integer-overflow':
+    case 'liquidation-attack':
+      return 'high';
+    case 'permit-front-run':
+    case 'front-running':
+    case 'sandwich-attack':
+      return 'medium';
+    default:
+      return 'medium';
+  }
+}
+
+function fallbackRecommendations(pattern: AttackPattern): string[] {
+  const common = [
+    'Run Slither/Mythril and compare results against these flagged code paths',
+    'Add regression tests that exercise the suspicious path before shipping',
+  ];
+
+  switch (pattern) {
+    case 'reentrancy':
+      return ['Apply CEI ordering and add a reentrancy guard on value-moving paths', 'Move state updates before external calls or use pull-pattern withdrawals', ...common];
+    case 'oracle-manipulation':
+      return ['Use TWAP or oracle sanity bounds instead of raw spot reserves', 'Guard large price deltas and single-block oracle reads', ...common];
+    case 'flash-loan-attack':
+      return ['Assume attackers can borrow size instantly; gate critical pricing/state transitions accordingly', 'Add invariant checks around callbacks and same-tx balance changes', ...common];
+    case 'access-control':
+      return ['Add explicit authorization checks to privileged functions', 'Audit every external/admin path for missing role enforcement', ...common];
+    case 'delegatecall-injection':
+      return ['Lock implementation targets behind strict allowlists/governance checks', 'Validate storage-slot and upgrade authorization assumptions', ...common];
+    case 'integer-overflow':
+      return ['Use checked arithmetic or explicit bounds before math on attacker-controlled inputs', 'Review unchecked blocks and accumulator math carefully', ...common];
+    default:
+      return ['Review the flagged code path manually and tighten invariants around it', ...common];
+  }
+}
+
+function buildFallbackAnalysis(contractCode: string, detectedPattern: AttackPattern): { summary: string; severity: Severity; confidence: number; recommendations: string[]; findings: Array<{ title: string; description: string; evidence: string }> } {
+  const evidence = extractEvidenceSnippets(contractCode, detectedPattern);
+  const severity = fallbackSeverityFor(detectedPattern);
+  const confidence = detectedPattern === 'unknown' ? 0.35 : evidence.length >= 2 ? 0.78 : 0.62;
+  const summary = detectedPattern === 'unknown'
+    ? 'No high-confidence exploit pattern matched. Contract looks inconclusive from signatures alone, so this needs deeper manual review.'
+    : `Signature analysis flagged a likely ${detectedPattern} path with concrete code evidence. This should be treated as a real security lead, not a cosmetic lint warning.`;
+
+  const findings = detectedPattern === 'unknown'
+    ? [{
+        title: 'Low-confidence static signal',
+        description: 'The scanner did not find a known exploit signature with enough confidence to classify the issue automatically.',
+        evidence: contractCode.slice(0, 300),
+      }]
+    : evidence.map((snippet, index) => ({
+        title: `${detectedPattern} evidence ${index + 1}`,
+        description: `Matched ${detectedPattern} signature in contract code`,
+        evidence: snippet,
+      }));
+
+  return {
+    summary,
+    severity,
+    confidence,
+    recommendations: fallbackRecommendations(detectedPattern),
+    findings,
+  };
+}
+
 // ── Main analysis ─────────────────────────────────────────────────────────────
 
 export interface AnalysisInput {
@@ -79,7 +173,7 @@ export async function analyzeThreat(input: AnalysisInput): Promise<ThreatReport>
   // Fast path: signature-based detection
   const detectedPattern = detectPatternBySignature(contractCode);
 
-  let llmAnalysis: { summary: string; severity: Severity; confidence: number; recommendations: string[] } | null = null;
+  let llmAnalysis: { summary: string; severity: Severity; confidence: number; recommendations: string[]; findings?: Array<{ title: string; description: string; evidence: string }> } | null = null;
 
   try {
     if (!BANKR_API_KEY) throw new Error('BANKR_API_KEY not set');
@@ -108,31 +202,27 @@ export async function analyzeThreat(input: AnalysisInput): Promise<ThreatReport>
     llmAnalysis = parseAnalysisResponse(content);
   } catch {
     // LLM unavailable — use signature-based detection as fallback
-    llmAnalysis = {
-      summary: `Signature-based detection: likely ${detectedPattern} attack. Manual review recommended.`,
-      severity: detectedPattern === 'unknown' ? 'medium' : 'high',
-      confidence: 0.4,
-      recommendations: [
-        'Review contract with a professional audit',
-        'Use Slither or Mythril for static analysis',
-        'Implement CEI pattern (Checks-Effects-Interactions)',
-      ],
-    };
+    llmAnalysis = buildFallbackAnalysis(contractCode, detectedPattern);
   }
+
+  const resolvedPattern = llmAnalysis ? inferPattern(`${llmAnalysis.summary}\n${llmAnalysis.findings?.map(f => `${f.title} ${f.description}`).join('\n') ?? ''}`) : detectedPattern;
+  const findings = llmAnalysis?.findings && llmAnalysis.findings.length > 0
+    ? llmAnalysis.findings
+    : [
+        {
+          title: `Potential ${detectedPattern} vulnerability`,
+          description: llmAnalysis?.summary ?? 'Detected via code signature analysis.',
+          evidence: contractCode.slice(0, 500),
+        },
+      ];
 
   return {
     reportId: randomUUID(),
     scenarioId,
-    attackPattern: llmAnalysis ? inferPattern(llmAnalysis.summary) : detectedPattern,
+    attackPattern: resolvedPattern,
     severity: llmAnalysis?.severity ?? 'high',
     summary: llmAnalysis?.summary ?? `Detected: ${detectedPattern}`,
-    findings: [
-      {
-        title: `Potential ${detectedPattern} vulnerability`,
-        description: llmAnalysis?.summary ?? 'Detected via code signature analysis.',
-        evidence: contractCode.slice(0, 500),
-      },
-    ],
+    findings,
     aiModel: model ?? 'bankr-default',
     confidence: llmAnalysis?.confidence ?? 0.4,
     recommendations: llmAnalysis?.recommendations ?? [],

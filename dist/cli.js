@@ -21,7 +21,7 @@ import { getLibraryStats, searchLibrary, exportLibrary } from './library.js';
 import { runThreatLab } from './runner.js';
 import { isAnvilRunning } from './executor.js';
 import { auditDependencies } from './audit.js';
-import { scanTarget, loadScanPayload, compareScanPayloads, formatScanDiff, getWorstScanSeverity, severityMeetsOrExceeds } from './scanner.js';
+import { scanTarget, watchTarget, loadScanPayload, compareScanPayloads, formatScanDiff, getWorstScanSeverity, severityMeetsOrExceeds, formatSecurityGateDecision } from './scanner.js';
 import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
@@ -309,15 +309,64 @@ async function main() {
                 }
                 if (failOnSeverity) {
                     const worst = getWorstScanSeverity(results);
+                    const gateSummary = formatSecurityGateDecision(results, failOnSeverity);
                     if (severityMeetsOrExceeds(worst, failOnSeverity)) {
-                        console.error(`\n❌ Security gate failed: worst severity ${worst} meets/exceeds threshold ${failOnSeverity}`);
+                        console.error(`\n❌ ${gateSummary}`);
                         process.exit(1);
                     }
-                    console.log(`\n✅ Security gate passed: worst severity ${worst} is below threshold ${failOnSeverity}`);
+                    console.log(`\n✅ ${gateSummary}`);
                 }
             }
             catch (err) {
                 console.error(`\n❌ Scan failed: ${err instanceof Error ? err.message : String(err)}`);
+                process.exit(1);
+            }
+            break;
+        }
+        case 'watch': {
+            const targetPath = args[1] ?? '.';
+            const quick = args.includes('--quick');
+            const noDeps = args.includes('--no-deps');
+            const noSim = args.includes('--no-sim');
+            const noIntel = args.includes('--no-intel');
+            const deep = args.includes('--deep');
+            const network = args.includes('--network') ? args[args.indexOf('--network') + 1] : 'anvil';
+            const intervalIdx = args.indexOf('--interval');
+            const iterationsIdx = args.indexOf('--iterations');
+            const outDirIdx = args.indexOf('--out-dir');
+            const intervalMs = intervalIdx !== -1 ? Math.max(1000, Number(args[intervalIdx + 1]) * 1000) : 60_000;
+            const maxIterations = iterationsIdx !== -1 ? Math.max(1, Number(args[iterationsIdx + 1])) : 0;
+            const outputDir = outDirIdx !== -1 ? args[outDirIdx + 1] : undefined;
+            if (!Number.isFinite(intervalMs) || intervalMs < 1000) {
+                console.error('\n❌ Invalid --interval value. Use seconds >= 1.');
+                process.exit(1);
+            }
+            if (iterationsIdx !== -1 && (!Number.isFinite(maxIterations) || maxIterations < 1)) {
+                console.error('\n❌ Invalid --iterations value. Use an integer >= 1.');
+                process.exit(1);
+            }
+            console.log(`\n👁️ Starting Threat Lab watch mode on ${targetPath}`);
+            console.log(`   Interval: ${(intervalMs / 1000).toFixed(0)}s`);
+            if (maxIterations > 0)
+                console.log(`   Iterations: ${maxIterations}`);
+            if (outputDir)
+                console.log(`   Snapshot dir: ${outputDir}`);
+            try {
+                await watchTarget({
+                    target: targetPath,
+                    quick,
+                    noDeps,
+                    noSim,
+                    noIntel,
+                    deep,
+                    network,
+                    intervalMs,
+                    maxIterations,
+                    outputDir,
+                });
+            }
+            catch (err) {
+                console.error(`\n❌ Watch failed: ${err instanceof Error ? err.message : String(err)}`);
                 process.exit(1);
             }
             break;
@@ -332,6 +381,7 @@ Usage:
   threat-lab run reentrancy-101 --network anvil
   threat-lab analyze <contract.sol> [--json]  Analyze a Solidity file (AI only)
   threat-lab scan <path>                  Unified scan: static + deps + intel + exploit sim
+  threat-lab watch <path>                 Continuous monitor mode with diffs + alerts
   threat-lab scan <path> --quick          Skip exploit simulation (faster)
   threat-lab scan <path> --no-deps        Skip dependency audit
   threat-lab scan <path> --no-intel       Skip live threat intel (Layer 2b)
@@ -339,6 +389,8 @@ Usage:
   threat-lab scan <path> --output report.md  Save scan report to .md or .json
   threat-lab scan <path> --compare old.json  Compare current scan to a prior JSON report
   threat-lab scan <path> --fail-on high     Exit non-zero when scan severity hits threshold
+  threat-lab watch <path> --interval 30     Re-scan every 30s and diff against prior run
+  threat-lab watch <path> --iterations 3    Run 3 monitor cycles then exit
   threat-lab audit <path>                 Dependency audit only (npm + OSV + Socket.dev)
   threat-lab audit ./ --no-socket         Skip Socket.dev (no API key)
   threat-lab submit <submission.json>     Submit a finding
@@ -354,6 +406,7 @@ Quick start:
   threat-lab scan .          # Full unified scan (all 4 layers)
   threat-lab scan . --quick  # Fast scan (skip exploit simulation)
   threat-lab scan . --deep   # Full scan + modelab deep research + patch generation
+  threat-lab watch . --interval 60 --iterations 5   # Monitor loop with diffing + alerts
   threat-lab scan . --compare baseline.json # Show what changed since the last scan
   threat-lab scan . --fail-on high          # CI gate: fail on high/critical findings
   threat-lab audit .         # Dependency audit only

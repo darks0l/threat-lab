@@ -22,6 +22,7 @@ describe('analyzer', () => {
       expect(report.attackPattern).toBe('reentrancy');
       expect(report.confidence).toBeGreaterThan(0);
       expect(report.findings.length).toBeGreaterThan(0);
+      expect(report.findings[0]?.evidence).toContain('call{value');
     });
 
     it('detects oracle manipulation in code', async () => {
@@ -117,6 +118,18 @@ describe('analyzer', () => {
         contractCode: 'function withdraw() external { msg.sender.call{value: 1}(""); }',
       });
       expect(report.recommendations.length).toBeGreaterThan(0);
+      expect(report.recommendations.some(r => /CEI|reentrancy guard|state updates/i.test(r))).toBe(true);
+    });
+
+    it('produces stronger fallback evidence for unknown code paths', async () => {
+      const report = await analyzeThreat({
+        scenarioId: 'test-unknown-evidence',
+        scenarioName: 'Unknown Evidence Test',
+        scenarioDesc: 'Ensure the fallback remains evidence-led',
+        contractCode: 'contract Plain { uint256 public value; function set(uint256 v) external { value = v; } }',
+      });
+      expect(report.findings[0]?.title).toBeDefined();
+      expect(report.findings[0]?.evidence?.length ?? 0).toBeGreaterThan(10);
     });
   });
 });

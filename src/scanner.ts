@@ -17,7 +17,7 @@
  * Output: unified threat report with per-category findings and overall severity.
  */
 
-import { readFile, readdir, stat, writeFile } from 'fs/promises';
+import { readFile, readdir, stat, writeFile, mkdir } from 'fs/promises';
 import { join, extname, relative } from 'path';
 import { analyzeThreat } from './analyzer.js';
 import { detectPatterns, type PatternMatch } from './patternDetector.js';
@@ -28,6 +28,16 @@ import { analyzeWithModelab, getBestAnalysis } from './modelabIntegration.js';
 import { runThreatIntel, type ThreatIntelResult } from './threatIntel.js';
 import { runDeepResearchBatch, formatDeepResearchReport, type DeepResearchFinding } from './deepResearch.js';
 import type { ThreatReport, AttackPattern, Severity } from './schemas.js';
+
+export const scannerDeps = {
+  analyzeThreat,
+  auditDependencies,
+  executeScenario,
+  isAnvilRunning,
+  analyzeWithModelab,
+  getBestAnalysis,
+  runThreatIntel,
+};
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -135,12 +145,237 @@ function computeThreatScore(results: ScanResult): number {
 }
 
 interface ConsolidatedFinding {
-  category: 'static' | 'deps' | 'sim';
+  category: 'static' | 'deps' | 'intel' | 'sim';
   severity: Severity;
   title: string;
   description: string;
   evidence?: string;
   recommendation?: string;
+  packageName?: string;
+  correlated?: boolean;
+  dedupeKey?: string;
+}
+
+interface ScanSummaryCounts {
+  bySeverity: Record<Severity, number>;
+  byCategory: Record<ConsolidatedFinding['category'], number>;
+  correlatedIntelAlerts: number;
+  activeExploitIntelAlerts: number;
+}
+
+function normalizeSeverity(value: string | undefined): Severity {
+  const lower = String(value ?? '').toLowerCase();
+  if (lower === 'critical') return 'critical';
+  if (lower === 'high') return 'high';
+  if (lower === 'medium' || lower === 'moderate') return 'medium';
+  if (lower === 'low') return 'low';
+  return 'informational';
+}
+
+function normalizePackageName(value: string | undefined | null): string | null {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized || null;
+}
+
+function getDependencyPackageSignals(dependencyAudit: DepAuditResult | null): Set<string> {
+  const signals = new Set<string>();
+
+  for (const vuln of dependencyAudit?.vulns ?? []) {
+    const pkg = normalizePackageName(vuln.package);
+    if (pkg) signals.add(pkg);
+  }
+
+  for (const advisory of dependencyAudit?.advisories ?? []) {
+    const title = String(advisory.title || '').toLowerCase();
+    const id = String(advisory.id || '').toLowerCase();
+    for (const token of [...signals]) {
+      if (title.includes(token) || id.includes(token)) {
+        signals.add(token);
+      }
+    }
+  }
+
+  return signals;
+}
+
+async function loadDeclaredDependencyNames(projectPath: string): Promise<Set<string>> {
+  try {
+    const pkgPath = join(projectPath, 'package.json');
+    const pkg = JSON.parse(await readFile(pkgPath, 'utf-8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    return new Set([
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.devDependencies ?? {}),
+      ...Object.keys(pkg.optionalDependencies ?? {}),
+    ].map((name) => name.toLowerCase()));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function isIntelCorrelated(packageName: string, dependencyAudit: DepAuditResult | null, declaredDependencies: Set<string> = new Set()): boolean {
+  const pkg = normalizePackageName(packageName);
+  if (!pkg) return false;
+  return declaredDependencies.has(pkg) || getDependencyPackageSignals(dependencyAudit).has(pkg);
+}
+
+function dedupeFindings(findings: ConsolidatedFinding[]): ConsolidatedFinding[] {
+  const seen = new Set<string>();
+  return findings.filter((finding) => {
+    const key = finding.dedupeKey
+      ?? [finding.category, finding.packageName ?? '', finding.title, finding.evidence ?? finding.description].join('|').toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function summarizeFindings(results: ScanResult[]): ScanSummaryCounts {
+  const bySeverity: Record<Severity, number> = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    informational: 0,
+  };
+  const byCategory: Record<ConsolidatedFinding['category'], number> = {
+    static: 0,
+    deps: 0,
+    intel: 0,
+    sim: 0,
+  };
+  let correlatedIntelAlerts = 0;
+  let activeExploitIntelAlerts = 0;
+
+  for (const finding of results.flatMap(r => r.findings)) {
+    bySeverity[finding.severity] += 1;
+    byCategory[finding.category] += 1;
+    if (finding.category === 'intel' && finding.correlated) correlatedIntelAlerts += 1;
+    if (finding.category === 'intel' && finding.severity === 'critical') activeExploitIntelAlerts += 1;
+  }
+
+  return { bySeverity, byCategory, correlatedIntelAlerts, activeExploitIntelAlerts };
+}
+
+export function formatSecurityGateDecision(results: ScanResult[], threshold: Severity): string {
+  const worst = getWorstScanSeverity(results);
+  const summary = summarizeFindings(results);
+  const status = severityMeetsOrExceeds(worst, threshold) ? 'failed' : 'passed';
+  return [
+    `Security gate ${status}: worst severity ${worst} vs threshold ${threshold}`,
+    `critical=${summary.bySeverity.critical}, high=${summary.bySeverity.high}, medium=${summary.bySeverity.medium}`,
+    `deps=${summary.byCategory.deps}, intel=${summary.byCategory.intel}, correlated-intel=${summary.correlatedIntelAlerts}, sim=${summary.byCategory.sim}`,
+  ].join(' | ');
+}
+
+function buildConsolidatedFindings(scan: {
+  file: string;
+  staticAnalysis: StaticResult | null;
+  dependencyAudit: DepAuditResult | null;
+  threatIntel: ThreatIntelResult[];
+  exploitSim: ExploitSimResult | null;
+  declaredDependencies?: Set<string>;
+}): ConsolidatedFinding[] {
+  const findings: ConsolidatedFinding[] = [];
+  const dependencySignals = getDependencyPackageSignals(scan.dependencyAudit);
+  const declaredDependencies = scan.declaredDependencies ?? new Set<string>();
+
+  if (scan.staticAnalysis?.aiReport) {
+    const report = scan.staticAnalysis.aiReport;
+    findings.push({
+      category: 'static',
+      severity: report.severity,
+      title: `${report.attackPattern} analysis for ${scan.file}`,
+      description: report.summary,
+      evidence: report.findings.map(f => `${f.title}: ${f.evidence}`).slice(0, 3).join(' | ') || scan.staticAnalysis.contractCode.slice(0, 300),
+      recommendation: report.recommendations[0],
+      dedupeKey: `static:${scan.file}:${report.attackPattern}:${report.summary}`,
+    });
+  }
+
+  for (const pattern of scan.staticAnalysis?.patterns ?? []) {
+    findings.push({
+      category: 'static',
+      severity: pattern.confidence >= 0.75 ? 'high' : pattern.confidence >= 0.45 ? 'medium' : 'low',
+      title: `Pattern match: ${pattern.pattern}`,
+      description: `Signature/keyword match at ${(pattern.confidence * 100).toFixed(0)}% confidence`,
+      evidence: pattern.matchedOn.slice(0, 5).join(', '),
+      dedupeKey: `pattern:${scan.file}:${pattern.pattern}:${pattern.matchedOn.slice(0, 3).join(',')}`,
+    });
+  }
+
+  for (const vuln of scan.dependencyAudit?.vulns ?? []) {
+    findings.push({
+      category: 'deps',
+      severity: normalizeSeverity(vuln.severity),
+      title: `${vuln.package}: ${vuln.title}`,
+      description: `Dependency vulnerability affecting ${vuln.package}`,
+      evidence: vuln.url,
+      recommendation: 'Upgrade, replace, or remove the affected package before deployment',
+      packageName: vuln.package,
+      dedupeKey: `deps:${vuln.package}:${vuln.title}:${vuln.url}`,
+    });
+  }
+
+  for (const advisory of scan.dependencyAudit?.advisories ?? []) {
+    findings.push({
+      category: 'deps',
+      severity: normalizeSeverity(advisory.severity),
+      title: `${advisory.id}: ${advisory.title}`,
+      description: advisory.activeExploit ? 'Advisory indicates active exploit pressure' : 'Dependency advisory detected during audit',
+      evidence: advisory.url,
+      recommendation: advisory.activeExploit ? 'Patch immediately and verify transitive exposure' : 'Review advisory and upgrade if affected',
+      dedupeKey: `advisory:${advisory.id}:${advisory.title}:${advisory.url}`,
+    });
+  }
+
+  for (const intel of scan.threatIntel) {
+    const pkg = normalizePackageName(intel.packageName);
+    const correlated = !!pkg && (declaredDependencies.has(pkg) || dependencySignals.has(pkg));
+    for (const search of intel.searches) {
+      for (const finding of search.findings) {
+        const severity = finding.isAlert
+          ? (correlated ? 'critical' : 'high')
+          : correlated
+            ? normalizeSeverity(intel.overallSeverity)
+            : 'low';
+        findings.push({
+          category: 'intel',
+          severity,
+          title: `${intel.packageName}: ${finding.title}`,
+          description: finding.snippet || `Live threat intel hit from ${finding.source}`,
+          evidence: finding.url,
+          recommendation: finding.isAlert
+            ? (correlated
+                ? 'Treat as live threat intel on an in-use dependency and confirm package safety before release'
+                : 'Active exploit chatter exists, but package correlation is weak — verify dependency usage before escalating')
+            : (correlated
+                ? 'Review recent intel for this in-use dependency and decide whether the package needs escalation'
+                : 'Intel mention is uncorrelated to audited dependencies; keep as background context unless repeated'),
+          packageName: intel.packageName,
+          correlated,
+          dedupeKey: `intel:${intel.packageName}:${finding.url || finding.title}`,
+        });
+      }
+    }
+  }
+
+  if (scan.exploitSim) {
+    findings.push({
+      category: 'sim',
+      severity: scan.exploitSim.severity,
+      title: `Exploit simulation: ${scan.exploitSim.scenarioName}`,
+      description: scan.exploitSim.success ? 'Built-in exploit scenario reproduced successfully' : 'Scenario executed but did not fully reproduce',
+      evidence: scan.exploitSim.output.slice(0, 500),
+      recommendation: scan.exploitSim.success ? `Prioritize fixes for the ${scan.exploitSim.scenarioId} class immediately` : 'Review simulation output and scenario assumptions',
+      dedupeKey: `sim:${scan.exploitSim.scenarioId}:${scan.file}`,
+    });
+  }
+
+  return dedupeFindings(findings);
 }
 
 // ── File discovery ─────────────────────────────────────────────────────────────
@@ -186,7 +421,7 @@ async function runStaticAnalysis(filePath: string): Promise<StaticResult> {
   // Deep path: AI analysis via Bankr gateway
   let aiReport: ThreatReport | null = null;
   try {
-    aiReport = await analyzeThreat({
+    aiReport = await scannerDeps.analyzeThreat({
       scenarioId: `scan:${relative('.', filePath)}`,
       scenarioName: filePath,
       scenarioDesc: 'Unified scan of user-submitted contract',
@@ -220,7 +455,7 @@ async function runThreatIntelLayer(
     ].map(([name, version]) => ({ name, version: version.replace(/^[\^~>=<]/, '') }));
 
     if (pkgs.length === 0) return [];
-    return await runThreatIntel({ packages: pkgs });
+    return await scannerDeps.runThreatIntel({ packages: pkgs });
   } catch {
     return [];
   }
@@ -228,7 +463,7 @@ async function runThreatIntelLayer(
 
 async function runDependencyAudit(projectPath: string): Promise<DepAuditResult> {
   try {
-    const audit = await auditDependencies({
+    const audit = await scannerDeps.auditDependencies({
       projectPath,
       includeDev: true,
       socketDev: true,
@@ -327,7 +562,7 @@ async function runExploitSim(filePath: string, network: string): Promise<Exploit
   if (!matchedScenario) return null;
 
   try {
-    const result = await executeScenario(matchedScenario, { network });
+    const result = await scannerDeps.executeScenario(matchedScenario, { network });
 
     // Extract traces from step results
     const stepTraces = result.steps
@@ -339,7 +574,7 @@ async function runExploitSim(filePath: string, network: string): Promise<Exploit
     // Run AI analysis on the simulation output
     let aiReport: ThreatReport | null = null;
     try {
-      const modelabResults = await analyzeWithModelab({
+      const modelabResults = await scannerDeps.analyzeWithModelab({
         scenarioId: matchedScenario.id,
         scenarioName: matchedScenario.name,
         txTraces: stepTraces,
@@ -347,7 +582,7 @@ async function runExploitSim(filePath: string, network: string): Promise<Exploit
         models: ['claude-sonnet-4-6'],
       });
       if (modelabResults.length > 0) {
-        aiReport = getBestAnalysis(modelabResults).report;
+        aiReport = scannerDeps.getBestAnalysis(modelabResults).report;
       }
     } catch {
       // Non-fatal
@@ -478,6 +713,22 @@ export interface ScanOptions {
   models?: string[];
   deep?: boolean;         // run deep research on flagged findings via modelab
   outputPath?: string;
+  saveArtifacts?: boolean;
+}
+
+export interface WatchOptions extends ScanOptions {
+  intervalMs?: number;
+  maxIterations?: number;
+  outputDir?: string;
+  scanRunner?: (options: ScanOptions) => Promise<ScanResult[]>;
+}
+
+export interface WatchIterationResult {
+  iteration: number;
+  scannedAt: string;
+  payload: ScanPayload;
+  diff: ScanDiffSummary | null;
+  alerts: string[];
 }
 
 export interface ScanPayload {
@@ -519,6 +770,11 @@ function buildMarkdownReport(target: string, results: ScanResult[]): string {
   const payload = buildScanPayload(target, results);
   const overallWorst = getWorstScanSeverity(results);
   const avgScore = results.length > 0 ? Math.round(results.reduce((s, r) => s + r.threatScore, 0) / results.length) : 0;
+  const allFindings = results.flatMap(r => r.findings);
+  const summary = summarizeFindings(results);
+  const criticalCount = summary.bySeverity.critical;
+  const intelAlerts = summary.activeExploitIntelAlerts;
+  const simConfirmed = summary.byCategory.sim;
   const lines: string[] = [];
 
   lines.push('# Threat Lab Scan Report');
@@ -528,6 +784,22 @@ function buildMarkdownReport(target: string, results: ScanResult[]): string {
   lines.push(`- Overall threat: ${overallWorst.toUpperCase()}`);
   lines.push(`- Average score: ${avgScore}/100`);
   lines.push(`- Files scanned: ${results.length}`);
+  lines.push(`- Critical findings: ${criticalCount}`);
+  lines.push(`- Live intel alerts: ${intelAlerts}`);
+  lines.push(`- Correlated intel alerts: ${summary.correlatedIntelAlerts}`);
+  lines.push(`- Confirmed simulation findings: ${simConfirmed}`);
+  lines.push('');
+  lines.push('## Threat Snapshot');
+  if (allFindings.length === 0) {
+    lines.push('- No structured findings emitted.');
+  } else {
+    for (const finding of allFindings
+      .slice()
+      .sort((a, b) => severityIndex(a.severity) - severityIndex(b.severity))
+      .slice(0, 8)) {
+      lines.push(`- [${finding.severity.toUpperCase()}] (${finding.category}) ${finding.title}`);
+    }
+  }
   lines.push('');
 
   for (const r of results) {
@@ -561,6 +833,16 @@ function buildMarkdownReport(target: string, results: ScanResult[]): string {
     if (r.recommendations.length) {
       lines.push('- Recommendations:');
       for (const rec of r.recommendations) lines.push(`  - ${rec}`);
+    }
+
+    if (r.findings.length) {
+      lines.push('- Evidence ledger:');
+      for (const finding of r.findings.slice(0, 5)) {
+        lines.push(`  - [${finding.severity}] (${finding.category}) ${finding.title}`);
+        lines.push(`    - ${finding.description}`);
+        if (finding.category === 'intel') lines.push(`    - correlated: ${finding.correlated ? 'yes' : 'no'}`);
+        if (finding.evidence) lines.push(`    - evidence: ${finding.evidence.replace(/\s+/g, ' ').slice(0, 220)}`);
+      }
     }
 
     if (r.errors.length) {
@@ -688,8 +970,109 @@ async function saveScanArtifacts(target: string, results: ScanResult[], outputPa
   console.log(`  📄 JSON report saved: ${jsonPath}`);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function buildWatchAlerts(diff: ScanDiffSummary | null): string[] {
+  if (!diff) return [];
+  const alerts: string[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of diff.entries) {
+    if (entry.status === 'new' && entry.currentSeverity && severityMeetsOrExceeds(entry.currentSeverity, 'high')) {
+      const alert = `NEW ${entry.currentSeverity.toUpperCase()} finding: ${entry.file} (${entry.currentScore}/100)`;
+      if (!seen.has(alert)) {
+        alerts.push(alert);
+        seen.add(alert);
+      }
+    }
+    if (entry.status === 'changed' && entry.currentSeverity && entry.previousSeverity) {
+      const escalated = severityIndex(entry.currentSeverity) < severityIndex(entry.previousSeverity);
+      const scoreRaised = (entry.currentScore ?? 0) > (entry.previousScore ?? 0);
+      if (escalated || scoreRaised) {
+        const alert = `ESCALATED ${entry.file}: ${entry.previousSeverity} (${entry.previousScore}/100) → ${entry.currentSeverity} (${entry.currentScore}/100)`;
+        if (!seen.has(alert)) {
+          alerts.push(alert);
+          seen.add(alert);
+        }
+      }
+    }
+  }
+
+  return alerts;
+}
+
+async function writeWatchPayload(outputDir: string | undefined, iteration: number, payload: ScanPayload): Promise<void> {
+  if (!outputDir) return;
+  await writeFile(join(outputDir, `watch-${String(iteration).padStart(3, '0')}.json`), JSON.stringify(payload, null, 2), 'utf-8');
+}
+
+export async function watchTarget(options: WatchOptions): Promise<WatchIterationResult[]> {
+  const {
+    intervalMs = 60_000,
+    maxIterations = 0,
+    outputDir,
+    scanRunner = scanTarget,
+    outputPath: _outputPath,
+    saveArtifacts: _saveArtifacts,
+    ...scanOptions
+  } = options;
+
+  if (outputDir) {
+    await mkdir(outputDir, { recursive: true });
+    await writeFile(join(outputDir, '.keep'), '', 'utf-8');
+  }
+
+  const history: WatchIterationResult[] = [];
+  let baseline: ScanPayload | null = null;
+  let iteration = 0;
+
+  console.log(`\n👁️ Threat Lab Watch — monitoring ${scanOptions.target}`);
+  console.log(`   Interval: ${(intervalMs / 1000).toFixed(1)}s`);
+  console.log(`   Iterations: ${maxIterations > 0 ? maxIterations : 'until stopped'}`);
+  if (outputDir) console.log(`   Snapshot dir: ${outputDir}`);
+
+  while (maxIterations === 0 || iteration < maxIterations) {
+    iteration += 1;
+    console.log(`\n━━━━━━━━━━ Watch iteration ${iteration} ━━━━━━━━━━`);
+    const results = await scanRunner({
+      ...scanOptions,
+      saveArtifacts: false,
+    });
+    const payload: ScanPayload = {
+      scannedAt: new Date().toISOString(),
+      target: scanOptions.target,
+      results,
+    };
+    const diff = baseline ? compareScanPayloads(payload, baseline) : null;
+    const alerts = buildWatchAlerts(diff);
+
+    if (diff) {
+      console.log(formatScanDiff(diff));
+      if (alerts.length > 0) {
+        console.log('  🚨 Monitor alerts:');
+        for (const alert of alerts) console.log(`     • ${alert}`);
+      } else {
+        console.log('  ✅ No new high-signal escalations this cycle.');
+      }
+    } else {
+      console.log('  Baseline snapshot established. Future cycles will diff against this run.');
+    }
+
+    await writeWatchPayload(outputDir, iteration, payload);
+    history.push({ iteration, scannedAt: payload.scannedAt, payload, diff, alerts });
+    baseline = payload;
+
+    if (maxIterations > 0 && iteration >= maxIterations) break;
+    await sleep(intervalMs);
+  }
+
+  return history;
+}
+
 export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
-  const { target, quick = false, noDeps = false, noSim = false, noIntel = false, network = 'anvil', deep = false, outputPath } = options;
+  const { target, quick = false, noDeps = false, noSim = false, noIntel = false, network = 'anvil', deep = false, outputPath, saveArtifacts = true } = options;
 
   console.log(`\n🔬 Threat Lab — Scanning ${target}`);
   if (!noDeps) console.log('   [1/4] Dependency audit  (OSV + npm advisories + Socket.dev)');
@@ -706,6 +1089,21 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
     return [];
   }
 
+  const projectDepPromise = noDeps ? Promise.resolve<DepAuditResult | null>(null) : runDependencyAudit(target);
+  const projectIntelPromise = noIntel ? Promise.resolve<ThreatIntelResult[] | null>(null) : runThreatIntelLayer(target);
+  const declaredDepsPromise = loadDeclaredDependencyNames(target);
+  const [projectDepRes, projectIntelRes, declaredDepsRes] = await Promise.allSettled([projectDepPromise, projectIntelPromise, declaredDepsPromise]);
+  const declaredDependencies = declaredDepsRes.status === 'fulfilled' ? declaredDepsRes.value : new Set<string>();
+  const sharedDependencyAudit = projectDepRes.status === 'fulfilled' ? projectDepRes.value : null;
+  const sharedThreatIntel = projectIntelRes.status === 'fulfilled' && projectIntelRes.value != null
+    ? projectIntelRes.value.filter((intel) => {
+        if (sharedDependencyAudit == null) return true;
+        return isIntelCorrelated(intel.packageName, sharedDependencyAudit, declaredDependencies) || intel.hasActiveExploit;
+      })
+    : [];
+  const sharedDepError = projectDepRes.status === 'rejected' ? `deps: ${projectDepRes.reason}` : null;
+  const sharedIntelError = projectIntelRes.status === 'rejected' ? `intel: ${projectIntelRes.reason}` : null;
+
   const results: ScanResult[] = [];
 
   for (const file of files) {
@@ -714,22 +1112,20 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
     const recommendations: string[] = [];
 
     // ── Run all three in parallel ──
-    const [staticRes, depRes, intelRes, simRes] = await Promise.allSettled([
+    const [staticRes, simRes] = await Promise.allSettled([
       runStaticAnalysis(file),
-      noDeps ? Promise.resolve(null) : runDependencyAudit(target),
-      noIntel ? Promise.resolve(null) : runThreatIntelLayer(target),
       quick || noSim ? Promise.resolve(null) : runExploitSim(file, network),
     ]);
 
     const staticAnalysis = staticRes.status === 'fulfilled' ? staticRes.value : null;
-    const dependencyAudit = depRes.status === 'fulfilled' ? depRes.value : null;
-    const threatIntel: ThreatIntelResult[] = intelRes.status === 'fulfilled' && intelRes.value != null ? intelRes.value : [];
+    const dependencyAudit = sharedDependencyAudit;
+    const threatIntel: ThreatIntelResult[] = sharedThreatIntel;
     const exploitSim = simRes.status === 'fulfilled' ? simRes.value : null;
 
     // Collect errors
     if (staticRes.status === 'rejected') errors.push(`static: ${staticRes.reason}`);
-    if (depRes.status === 'rejected') errors.push(`deps: ${depRes.reason}`);
-    if (intelRes.status === 'rejected') errors.push(`intel: ${intelRes.reason}`);
+    if (sharedDepError) errors.push(sharedDepError);
+    if (sharedIntelError) errors.push(sharedIntelError);
     if (simRes.status === 'rejected') errors.push(`sim: ${simRes.reason}`);
 
     // Determine overall severity
@@ -767,8 +1163,10 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
     if (dependencyAudit?.advisories.some(a => a.activeExploit)) {
       recommendations.push('🚨 ACTIVE EXPLOIT: Update affected packages immediately');
     }
-    if (threatIntel.some(t => t.hasActiveExploit)) {
-      recommendations.push('🚨 LIVE THREAT: Packages with active exploits found — do NOT use until confirmed safe');
+    if (threatIntel.some(t => t.hasActiveExploit && isIntelCorrelated(t.packageName, dependencyAudit, declaredDependencies))) {
+      recommendations.push('🚨 LIVE THREAT: In-use packages with active exploits found — do NOT use until confirmed safe');
+    } else if (threatIntel.some(t => t.hasActiveExploit)) {
+      recommendations.push('⚠️ Active exploit chatter found in threat intel, but dependency correlation is weak — verify actual usage before escalating');
     }
     if (exploitSim?.success) {
       recommendations.push(`Exploit simulation confirmed: review ${exploitSim.scenarioName} pattern`);
@@ -783,7 +1181,14 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
       exploitSim,
       overallSeverity,
       threatScore: 0, // filled below
-      findings: [],    // filled below
+      findings: buildConsolidatedFindings({
+        file,
+        staticAnalysis,
+        dependencyAudit,
+        threatIntel,
+        exploitSim,
+        declaredDependencies,
+      }),
       recommendations: [...new Set(recommendations)],
       durationMs: Date.now() - t0,
       errors,
@@ -796,7 +1201,12 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
     const sevIcon = scanResult.overallSeverity === 'critical' ? '🔴' : scanResult.overallSeverity === 'high' ? '🟠' : scanResult.overallSeverity === 'medium' ? '🟡' : scanResult.overallSeverity === 'low' ? '🟢' : '⚪';
     const simTag = exploitSim ? (exploitSim.success ? '⚡ EXPLOITED' : '✅ safe') : noSim || quick ? '⏭ skipped' : '—';
     const activeCount = threatIntel.filter(t => t.hasActiveExploit).length;
-    const intelTag = activeCount > 0 ? `🚨 LIVE THREAT (${activeCount})` : noIntel ? '⏭ intel off' : '🌐 intel ok';
+    const correlatedActiveCount = threatIntel.filter(t => t.hasActiveExploit && isIntelCorrelated(t.packageName, dependencyAudit, declaredDependencies)).length;
+    const intelTag = correlatedActiveCount > 0
+      ? `🚨 LIVE THREAT (${correlatedActiveCount} correlated)`
+      : activeCount > 0
+        ? `⚠️ intel weak-signal (${activeCount})`
+        : noIntel ? '⏭ intel off' : '🌐 intel ok';
     console.log(`  ${sevIcon} ${file} [score: ${scanResult.threatScore}] [${simTag}] [${intelTag}]`);
   }
 
@@ -859,7 +1269,9 @@ export async function scanTarget(options: ScanOptions): Promise<ScanResult[]> {
   }
 
   // ── Save report artifact ──
-  await saveScanArtifacts(target, results, outputPath);
+  if (saveArtifacts) {
+    await saveScanArtifacts(target, results, outputPath);
+  }
 
   const totalMs = Date.now() - startAll;
   console.log(`\n  ✅ Scan complete in ${(totalMs / 1000).toFixed(1)}s`);

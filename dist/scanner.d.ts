@@ -16,9 +16,22 @@
  *
  * Output: unified threat report with per-category findings and overall severity.
  */
+import { analyzeThreat } from './analyzer.js';
 import { type PatternMatch } from './patternDetector.js';
-import { type ThreatIntelResult } from './threatIntel.js';
+import { auditDependencies } from './audit.js';
+import { executeScenario, isAnvilRunning } from './executor.js';
+import { analyzeWithModelab, getBestAnalysis } from './modelabIntegration.js';
+import { runThreatIntel, type ThreatIntelResult } from './threatIntel.js';
 import type { ThreatReport, Severity } from './schemas.js';
+export declare const scannerDeps: {
+    analyzeThreat: typeof analyzeThreat;
+    auditDependencies: typeof auditDependencies;
+    executeScenario: typeof executeScenario;
+    isAnvilRunning: typeof isAnvilRunning;
+    analyzeWithModelab: typeof analyzeWithModelab;
+    getBestAnalysis: typeof getBestAnalysis;
+    runThreatIntel: typeof runThreatIntel;
+};
 export interface ScanResult {
     file: string;
     staticAnalysis: StaticResult | null;
@@ -68,13 +81,17 @@ interface ExploitSimResult {
 export declare function severityMeetsOrExceeds(actual: Severity, threshold: Severity): boolean;
 export declare function getWorstScanSeverity(results: ScanResult[]): Severity;
 interface ConsolidatedFinding {
-    category: 'static' | 'deps' | 'sim';
+    category: 'static' | 'deps' | 'intel' | 'sim';
     severity: Severity;
     title: string;
     description: string;
     evidence?: string;
     recommendation?: string;
+    packageName?: string;
+    correlated?: boolean;
+    dedupeKey?: string;
 }
+export declare function formatSecurityGateDecision(results: ScanResult[], threshold: Severity): string;
 export declare function findSolFiles(target: string): Promise<string[]>;
 export declare function generateReport(results: ScanResult[]): string;
 export interface ScanOptions {
@@ -87,6 +104,20 @@ export interface ScanOptions {
     models?: string[];
     deep?: boolean;
     outputPath?: string;
+    saveArtifacts?: boolean;
+}
+export interface WatchOptions extends ScanOptions {
+    intervalMs?: number;
+    maxIterations?: number;
+    outputDir?: string;
+    scanRunner?: (options: ScanOptions) => Promise<ScanResult[]>;
+}
+export interface WatchIterationResult {
+    iteration: number;
+    scannedAt: string;
+    payload: ScanPayload;
+    diff: ScanDiffSummary | null;
+    alerts: string[];
 }
 export interface ScanPayload {
     scannedAt: string;
@@ -116,6 +147,7 @@ export declare function buildScanPayload(target: string, results: ScanResult[]):
 export declare function loadScanPayload(path: string): Promise<ScanPayload>;
 export declare function compareScanPayloads(current: ScanPayload, baseline: ScanPayload): ScanDiffSummary;
 export declare function formatScanDiff(summary: ScanDiffSummary): string;
+export declare function watchTarget(options: WatchOptions): Promise<WatchIterationResult[]>;
 export declare function scanTarget(options: ScanOptions): Promise<ScanResult[]>;
 export {};
 //# sourceMappingURL=scanner.d.ts.map

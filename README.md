@@ -4,8 +4,8 @@ Built by DARKSOL 🌑
 # 🔬 Threat Lab
 
 [![Threat Assessment](https://img.shields.io/badge/threat%20analysis-4%20layers-ff4444?style=flat-square&logo=shield)](https://github.com/darks0l/threat-lab)
-[![npm version](https://img.shields.io/badge/npm-0.3.1-orange?style=flat-square)](https://www.npmjs.com/package/threat-lab)
-[![tests](https://img.shields.io/badge/tests-93%20passing-brightgreen?style=flat-square)](https://github.com/darks0l/threat-lab)
+[![npm version](https://img.shields.io/badge/npm-0.4.0-orange?style=flat-square)](https://www.npmjs.com/package/threat-lab)
+[![tests](https://img.shields.io/badge/tests-99%20passing-brightgreen?style=flat-square)](https://github.com/darks0l/threat-lab)
 [![Solidity](https://img.shields.io/badge/solidity-0.8-blue?style=flat-square&logo=solidity)](https://docs.soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/foundry-deployed-ff1111?style=flat-square&logo=foundry)](https://book.getfoundry.sh/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](./LICENSE)
@@ -13,7 +13,7 @@ Built by DARKSOL 🌑
 
 ![Threat Lab Banner](assets/darksol-banner.png)
 
-> AI-powered security research platform — deploy exploit scenarios, get AI analysis, build the collective pattern library.
+> Unified Solidity security scanner and threat research CLI — static analysis, dependency audit, live threat intel, exploit simulation, and watch-mode monitoring.
 
 **The threat landscape is a moving target.** MEV bots, flash loan attacks, oracle manipulation — by the time a new exploit pattern is understood well enough to defend against, dozens of protocols have already been hit. The window between "detected" and "exploited" is milliseconds. The window between "exploited" and "patched" is weeks.
 
@@ -60,13 +60,18 @@ npx threat-lab status
 npx threat-lab list
 
 # Unified scan — all 4 layers in one pass (recommended)
-npx threat-lab scan .                  # full: static + deps + intel + exploit sim
-npx threat-lab scan . --quick          # fast: static + deps (no Anvil)
-npx threat-lab scan . --no-intel      # skip live threat intel
-npx threat-lab scan . --deep           # full + modelab deep research + patch generation
+npx threat-lab scan .                   # full: static + deps + intel + exploit sim
+npx threat-lab scan . --quick           # fast: static + deps (no Anvil)
+npx threat-lab scan . --no-intel        # skip live threat intel
+npx threat-lab scan . --deep            # full + modelab deep research + patch generation
 npx threat-lab scan . --output report.md # save a reusable markdown report
 npx threat-lab scan . --compare baseline.json # see what changed vs a prior scan
-npx threat-lab scan . --fail-on high # fail CI/builds on high+ findings
+npx threat-lab scan . --fail-on high    # fail CI/builds on high+ findings
+
+# Continuous monitoring / watch mode
+npx threat-lab watch . --interval 60              # rescan every minute
+npx threat-lab watch . --interval 30 --iterations 5 # run 5 monitor cycles then exit
+npx threat-lab watch . --out-dir .threat-lab/watch # save per-cycle snapshots
 
 # Analyze a Solidity file directly (static analysis only)
 npx threat-lab analyze ./contracts/MyVault.sol
@@ -220,7 +225,7 @@ DEPLOYER_PRIVATE_KEY=0x...
 
 ---
 
-## The unified scan — all 3 layers in one command
+## The unified scan — all 4 layers in one command
 
 ```
 npx threat-lab scan .
@@ -237,7 +242,7 @@ npx threat-lab scan .
    Overall Threat: HIGH | Score: 80/100 | 3 files
 ```
 
-The unified `scan` command runs four independent passes:
+The unified `scan` command runs four independent passes, then can stay live in `watch` mode for rescans and diffs:
 
 **Layer 1 — Static Analysis** *(always on)*
 Signature pattern matching against all known attack patterns + Bankr AI deep-read of contract code. Scans every `.sol` file in the target path recursively.
@@ -246,7 +251,7 @@ Signature pattern matching against all known attack patterns + Bankr AI deep-rea
 Queries OSV.dev, npm Security Advisories, and Socket.dev for known vulnerabilities and malicious packages. Active exploits (CVEs described as "actively exploited") are flagged at highest priority.
 
 **Layer 2b — Live Threat Intelligence** *(always on, requires internet)*
-After static vuln DB checks, searches the live web for package mentions in the last 14 days:
+After static vuln DB checks, searches the live web for package mentions in the last 14 days and correlates them against declared project dependencies before escalating:
 - GitHub Security Advisories API (free, no key needed)
 - Brave Search API for X/Twitter and security blog discussions
 - Catches 0-days and active discussions NOT yet in CVE/OSV databases
@@ -255,6 +260,9 @@ After static vuln DB checks, searches the live web for package mentions in the l
 
 **Layer 3 — Exploit Simulation** *(if Anvil running + contract matched to scenario)*
 Matches your contract to a built-in scenario by code signature, deploys it to Anvil, executes the attack, and runs the transaction trace through AI for a verdict.
+
+**Watch Mode** *(optional, `watch <path>`)*
+Build a baseline scan, re-run on an interval, diff each cycle, emit only new/escalated high-signal findings, and optionally save JSON snapshots for later review.
 
 **Deep Research** *(optional, `--deep` flag)*
 Runs flagged findings through modelab's multi-model research pipeline:

@@ -1,10 +1,10 @@
 {
   "name": "threat-lab",
-  "version": "0.3.1",
-  "description": "AI-powered threat research platform — deploy exploits, get AI analysis, build the collective pattern library",
+  "version": "0.4.0",
+  "description": "Unified Solidity security scanner — static analysis, dependency audit, live threat intel, exploit simulation, and watch-mode monitoring",
   "type": "module",
   "bin": {
-    "threat-lab": "./dist/cli.js"
+    "threat-lab": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -20,7 +20,7 @@
   "homepage": "https://github.com/darks0l/threat-lab",
   "repository": {
     "type": "git",
-    "url": "https://github.com/darks0l/threat-lab.git"
+    "url": "git+https://github.com/darks0l/threat-lab.git"
   },
   "scripts": {
     "build": "tsc",

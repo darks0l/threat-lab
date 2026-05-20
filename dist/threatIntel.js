@@ -40,23 +40,21 @@ export async function runThreatIntel(options) {
     console.log('\n🌐 Running live threat intelligence...');
     // Log missing API key warnings once, outside the loop
     if (!braveApiKey) {
-        console.log(`   ⚠️  BRAVE_SEARCH_API_KEY not set — live web search skipped (get key at brave.com/search/api)`);
+        console.log(`   ⚠️  BRAVE_SEARCH_API_KEY not set — Brave web search skipped (get key at brave.com/search/api)`);
     }
     if (!ghToken) {
-        console.log(`   ⚠️  GITHUB_TOKEN not set — GitHub Security Advisories search skipped`);
+        console.log(`   ℹ️  GITHUB_TOKEN not set — using unauthenticated GitHub Security Advisories requests (lower rate limits)`);
     }
     for (const pkg of packages) {
         const searches = [];
         let hasActiveExploit = false;
         let allFindings = [];
-        // ── GitHub Security Advisories (free, no API key needed for public data) ──
-        if (ghToken) {
-            const ghResult = await searchGitHubAdvisories(pkg.name, ghToken, daysLookback);
-            searches.push(ghResult);
-            allFindings.push(...ghResult.findings);
-            if (ghResult.findings.some(f => f.isAlert))
-                hasActiveExploit = true;
-        }
+        // ── GitHub Security Advisories (public data; token optional) ──
+        const ghResult = await searchGitHubAdvisories(pkg.name, ghToken, daysLookback);
+        searches.push(ghResult);
+        allFindings.push(...ghResult.findings);
+        if (ghResult.findings.some(f => f.isAlert))
+            hasActiveExploit = true;
         // ── Brave Search (requires API key) ──
         if (braveApiKey) {
             const braveResult = await searchBrave(pkg.name, pkg.version, braveApiKey, daysLookback);
@@ -117,12 +115,14 @@ async function searchGitHubAdvisories(packageName, token, days) {
     const findings = [];
     try {
         // GitHub's global security advisories database — free with GH token
+        const headers = {
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+        };
+        if (token)
+            headers.Authorization = `Bearer ${token}`;
         const resp = await axios.get(`${GH_ADVISORIES_API}`, {
-            headers: {
-                Accept: 'application/vnd.github+json',
-                Authorization: `Bearer ${token}`,
-                'X-GitHub-Api-Version': '2022-11-28',
-            },
+            headers,
             params: {
                 query: packageName,
                 severity: 'high,critical',
@@ -157,8 +157,8 @@ async function searchGitHubAdvisories(packageName, token, days) {
         }
     }
     catch (err) {
-        if (axios.isAxiosError(err) && err.response?.status === 403) {
-            console.warn(`   ⚠️  GitHub API rate limited — advisory search skipped`);
+        if (axios.isAxiosError(err) && (err.response?.status === 403 || err.response?.status === 429)) {
+            console.warn(`   ⚠️  GitHub advisory search rate limited — continuing without GitHub results`);
         }
         else {
             console.warn(`   ⚠️  GitHub advisory search failed: ${err instanceof Error ? err.message : String(err)}`);
