@@ -17,7 +17,7 @@
  * Output: unified threat report with per-category findings and overall severity.
  */
 import { readFile, readdir, stat, writeFile, mkdir } from 'fs/promises';
-import { join, extname, relative } from 'path';
+import { join, extname, relative, dirname } from 'path';
 import { analyzeThreat } from './analyzer.js';
 import { detectPatterns } from './patternDetector.js';
 import { auditDependencies } from './audit.js';
@@ -647,6 +647,75 @@ function buildMarkdownReport(target, results) {
     }
     return lines.join('\n');
 }
+function sarifLevelFor(severity) {
+    if (severity === 'critical' || severity === 'high')
+        return 'error';
+    if (severity === 'medium' || severity === 'low')
+        return 'warning';
+    return 'note';
+}
+function buildSarifRuleId(finding) {
+    return (`${finding.category}/${finding.title}`)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || `${finding.category}-finding`;
+}
+function buildSarifReport(target, results) {
+    const flattened = results.flatMap((result) => result.findings.map((finding) => ({ result, finding })));
+    const ruleMap = new Map();
+    for (const { finding } of flattened) {
+        const ruleId = buildSarifRuleId(finding);
+        if (!ruleMap.has(ruleId)) {
+            ruleMap.set(ruleId, {
+                id: ruleId,
+                name: finding.title,
+                shortDescription: { text: finding.title },
+                fullDescription: { text: finding.description },
+                properties: { tags: [finding.category, finding.severity], precision: 'high' },
+                help: finding.recommendation ? { text: finding.recommendation } : undefined,
+            });
+        }
+    }
+    return {
+        version: '2.1.0',
+        $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
+        runs: [
+            {
+                tool: {
+                    driver: {
+                        name: 'threat-lab',
+                        version: '0.4.0',
+                        informationUri: 'https://github.com/darks0l/threat-lab',
+                        rules: [...ruleMap.values()],
+                    },
+                },
+                results: flattened.map(({ result, finding }) => ({
+                    ruleId: buildSarifRuleId(finding),
+                    level: sarifLevelFor(finding.severity),
+                    message: {
+                        text: [finding.description, finding.evidence, finding.recommendation].filter(Boolean).join(' | '),
+                    },
+                    locations: [
+                        {
+                            physicalLocation: {
+                                artifactLocation: {
+                                    uri: relative(target, result.file) || result.file,
+                                },
+                            },
+                        },
+                    ],
+                    properties: {
+                        severity: finding.severity,
+                        category: finding.category,
+                        threatScore: result.threatScore,
+                        packageName: finding.packageName,
+                        correlated: finding.correlated,
+                    },
+                })),
+            },
+        ],
+    };
+}
 export async function loadScanPayload(path) {
     const raw = await readFile(path, 'utf-8');
     return JSON.parse(raw);
@@ -732,10 +801,16 @@ export function formatScanDiff(summary) {
 async function saveScanArtifacts(target, results, outputPath) {
     const payload = buildScanPayload(target, results);
     if (outputPath) {
+        await mkdir(dirname(outputPath), { recursive: true });
         const normalized = outputPath.toLowerCase();
         if (normalized.endsWith('.md')) {
             await writeFile(outputPath, buildMarkdownReport(target, results), 'utf-8');
             console.log(`  📄 Scan report saved: ${outputPath}`);
+            return;
+        }
+        if (normalized.endsWith('.sarif') || normalized.endsWith('.sarif.json')) {
+            await writeFile(outputPath, JSON.stringify(buildSarifReport(target, results), null, 2), 'utf-8');
+            console.log(`  📄 SARIF report saved: ${outputPath}`);
             return;
         }
         await writeFile(outputPath, JSON.stringify(payload, null, 2), 'utf-8');

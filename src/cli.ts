@@ -405,7 +405,7 @@ Usage:
   threat-lab scan <path> --no-deps        Skip dependency audit
   threat-lab scan <path> --no-intel       Skip live threat intel (Layer 2b)
   threat-lab scan <path> --deep           Run deep research on flagged findings (modelab)
-  threat-lab scan <path> --output report.md  Save scan report to .md or .json
+  threat-lab scan <path> --output report.md  Save scan report to .md, .json, or .sarif
   threat-lab scan <path> --compare old.json  Compare current scan to a prior JSON report
   threat-lab scan <path> --fail-on high     Exit non-zero when scan severity hits threshold
   threat-lab watch <path> --interval 30     Re-scan every 30s and diff against prior run
@@ -427,6 +427,7 @@ Quick start:
   threat-lab scan . --deep   # Full scan + modelab deep research + patch generation
   threat-lab watch . --interval 60 --iterations 5   # Monitor loop with diffing + alerts
   threat-lab scan . --compare baseline.json # Show what changed since the last scan
+  threat-lab scan . --output findings.sarif # Export SARIF for GitHub/code scanning
   threat-lab scan . --fail-on high          # CI gate: fail on high/critical findings
   threat-lab audit .         # Dependency audit only
   threat-lab run reentrancy-101  # Execute + analyze + add to library

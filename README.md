@@ -65,6 +65,7 @@ npx threat-lab scan . --quick           # fast: static + deps (no Anvil)
 npx threat-lab scan . --no-intel        # skip live threat intel
 npx threat-lab scan . --deep            # full + modelab deep research + patch generation
 npx threat-lab scan . --output report.md # save a reusable markdown report
+npx threat-lab scan . --output .reports/security/threat-lab.sarif # nested dirs auto-create
 npx threat-lab scan . --compare baseline.json # see what changed vs a prior scan
 npx threat-lab scan . --fail-on high    # fail CI/builds on high+ findings
 
@@ -243,6 +244,100 @@ npx threat-lab scan .
 ```
 
 The unified `scan` command runs four independent passes, then can stay live in `watch` mode for rescans and diffs:
+
+### SARIF output for CI / code scanning
+
+Threat Lab can export scan findings as **SARIF 2.1.0** for GitHub code scanning and other security tooling.
+
+```bash
+npx threat-lab scan . --output .reports/security/threat-lab.sarif
+```
+
+Custom output directories are created automatically, so nested paths are safe.
+
+### GitHub Action wrapper
+
+Threat Lab now ships a reusable composite action, so repos can use it directly:
+
+```yaml
+name: threat-lab
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Threat Lab scan
+        uses: darks0l/threat-lab@v0
+        with:
+          path: .
+          scan-args: --quick --no-intel --fail-on high
+          output: .reports/security/threat-lab.sarif
+```
+
+### Action inputs
+
+- `path` — path to scan (default: `.`)
+- `node-version` — Node version for the run (default: `20`)
+- `install-command` — dependency install command (default: `npm ci`)
+- `build-command` — build command (default: `npm run build`)
+- `scan-args` — extra args passed to `threat-lab scan` (default: `--quick --no-intel`)
+- `output` — SARIF output path (default: `.reports/security/threat-lab.sarif`)
+- `upload-sarif` — whether to upload SARIF automatically (default: `true`)
+
+### Manual GitHub Actions example
+
+If you want the lower-level version instead of the wrapper:
+
+```yaml
+name: threat-lab
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build Threat Lab
+        run: npm run build
+
+      - name: Run Threat Lab SARIF scan
+        run: node dist/cli.js scan . --quick --no-intel --output .reports/security/threat-lab.sarif
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .reports/security/threat-lab.sarif
+```
+
+If you want CI to fail on serious findings too, add `--fail-on high` to the scan command or to `scan-args` in the wrapper.
 
 **Layer 1 — Static Analysis** *(always on)*
 Signature pattern matching against all known attack patterns + Bankr AI deep-read of contract code. Scans every `.sol` file in the target path recursively.

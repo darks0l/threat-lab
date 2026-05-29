@@ -1,6 +1,6 @@
 {
   "name": "threat-lab",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Unified Solidity security scanner — static analysis, dependency audit, live threat intel, exploit simulation, and watch-mode monitoring",
   "type": "module",
   "bin": {

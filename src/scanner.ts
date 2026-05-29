@@ -18,7 +18,7 @@
  */
 
 import { readFile, readdir, stat, writeFile, mkdir } from 'fs/promises';
-import { join, extname, relative } from 'path';
+import { join, extname, relative, dirname } from 'path';
 import { analyzeThreat } from './analyzer.js';
 import { detectPatterns, type PatternMatch } from './patternDetector.js';
 import { auditDependencies } from './audit.js';
@@ -154,6 +154,49 @@ interface ConsolidatedFinding {
   packageName?: string;
   correlated?: boolean;
   dedupeKey?: string;
+}
+
+interface SarifRule {
+  id: string;
+  name: string;
+  shortDescription: { text: string };
+  fullDescription: { text: string };
+  properties: { tags: string[]; precision: string };
+  help?: { text: string };
+}
+
+interface SarifResult {
+  ruleId: string;
+  level: 'error' | 'warning' | 'note';
+  message: { text: string };
+  locations: Array<{
+    physicalLocation: {
+      artifactLocation: { uri: string };
+    };
+  }>;
+  properties: {
+    severity: Severity;
+    category: ConsolidatedFinding['category'];
+    threatScore: number;
+    packageName?: string;
+    correlated?: boolean;
+  };
+}
+
+interface SarifLog {
+  version: '2.1.0';
+  $schema: string;
+  runs: Array<{
+    tool: {
+      driver: {
+        name: string;
+        version: string;
+        informationUri: string;
+        rules: SarifRule[];
+      };
+    };
+    results: SarifResult[];
+  }>;
 }
 
 interface ScanSummaryCounts {
@@ -856,6 +899,78 @@ function buildMarkdownReport(target: string, results: ScanResult[]): string {
   return lines.join('\n');
 }
 
+function sarifLevelFor(severity: Severity): 'error' | 'warning' | 'note' {
+  if (severity === 'critical' || severity === 'high') return 'error';
+  if (severity === 'medium' || severity === 'low') return 'warning';
+  return 'note';
+}
+
+function buildSarifRuleId(finding: ConsolidatedFinding): string {
+  return (`${finding.category}/${finding.title}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || `${finding.category}-finding`;
+}
+
+function buildSarifReport(target: string, results: ScanResult[]): SarifLog {
+  const flattened = results.flatMap((result) => result.findings.map((finding) => ({ result, finding })));
+  const ruleMap = new Map<string, SarifRule>();
+
+  for (const { finding } of flattened) {
+    const ruleId = buildSarifRuleId(finding);
+    if (!ruleMap.has(ruleId)) {
+      ruleMap.set(ruleId, {
+        id: ruleId,
+        name: finding.title,
+        shortDescription: { text: finding.title },
+        fullDescription: { text: finding.description },
+        properties: { tags: [finding.category, finding.severity], precision: 'high' },
+        help: finding.recommendation ? { text: finding.recommendation } : undefined,
+      });
+    }
+  }
+
+  return {
+    version: '2.1.0',
+    $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: 'threat-lab',
+            version: '0.4.0',
+            informationUri: 'https://github.com/darks0l/threat-lab',
+            rules: [...ruleMap.values()],
+          },
+        },
+        results: flattened.map(({ result, finding }) => ({
+          ruleId: buildSarifRuleId(finding),
+          level: sarifLevelFor(finding.severity),
+          message: {
+            text: [finding.description, finding.evidence, finding.recommendation].filter(Boolean).join(' | '),
+          },
+          locations: [
+            {
+              physicalLocation: {
+                artifactLocation: {
+                  uri: relative(target, result.file) || result.file,
+                },
+              },
+            },
+          ],
+          properties: {
+            severity: finding.severity,
+            category: finding.category,
+            threatScore: result.threatScore,
+            packageName: finding.packageName,
+            correlated: finding.correlated,
+          },
+        })),
+      },
+    ],
+  };
+}
+
 export async function loadScanPayload(path: string): Promise<ScanPayload> {
   const raw = await readFile(path, 'utf-8');
   return JSON.parse(raw) as ScanPayload;
@@ -954,10 +1069,16 @@ async function saveScanArtifacts(target: string, results: ScanResult[], outputPa
   const payload = buildScanPayload(target, results);
 
   if (outputPath) {
+    await mkdir(dirname(outputPath), { recursive: true });
     const normalized = outputPath.toLowerCase();
     if (normalized.endsWith('.md')) {
       await writeFile(outputPath, buildMarkdownReport(target, results), 'utf-8');
       console.log(`  📄 Scan report saved: ${outputPath}`);
+      return;
+    }
+    if (normalized.endsWith('.sarif') || normalized.endsWith('.sarif.json')) {
+      await writeFile(outputPath, JSON.stringify(buildSarifReport(target, results), null, 2), 'utf-8');
+      console.log(`  📄 SARIF report saved: ${outputPath}`);
       return;
     }
     await writeFile(outputPath, JSON.stringify(payload, null, 2), 'utf-8');

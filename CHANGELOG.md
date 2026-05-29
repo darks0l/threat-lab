@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.4.1 — 2026-05-29
+
+- feat: export unified scan results as SARIF 2.1.0 for GitHub code scanning and CI security pipelines
+- feat: add a reusable composite GitHub Action wrapper via `action.yml`
+- fix: auto-create nested output directories for `scan --output` targets
+- docs: add wrapper usage, SARIF workflow examples, and version-pinned action guidance
+- chore: align package metadata / lockfile versioning for the new release
+
 ## v0.4.0 — 2026-05-20
 
 - feat: add `watch <path>` monitor mode with interval-based rescans, diffing, snapshot output, and escalation alerts

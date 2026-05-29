@@ -1,0 +1,72 @@
+name: 'Threat Lab Scan'
+description: 'Run Threat Lab security scans and optionally upload SARIF to GitHub code scanning'
+author: 'Darksol'
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  path:
+    description: 'Path to scan'
+    required: false
+    default: '.'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+  install-command:
+    description: 'Command used to install dependencies'
+    required: false
+    default: 'npm ci'
+  build-command:
+    description: 'Command used to build Threat Lab'
+    required: false
+    default: 'npm run build'
+  scan-args:
+    description: 'Additional arguments passed to threat-lab scan'
+    required: false
+    default: '--quick --no-intel'
+  output:
+    description: 'SARIF output path'
+    required: false
+    default: '.reports/security/threat-lab.sarif'
+  upload-sarif:
+    description: 'Upload SARIF to GitHub code scanning'
+    required: false
+    default: 'true'
+
+outputs:
+  sarif_file:
+    description: 'Generated SARIF file path'
+    value: ${{ steps.scan.outputs.sarif_file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install dependencies
+      shell: bash
+      run: ${{ inputs.install-command }}
+
+    - name: Build Threat Lab
+      shell: bash
+      run: ${{ inputs.build-command }}
+
+    - name: Run Threat Lab scan
+      id: scan
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$(dirname '${{ inputs.output }}')"
+        node dist/cli.js scan "${{ inputs.path }}" ${{ inputs.scan-args }} --output "${{ inputs.output }}"
+        echo "sarif_file=${{ inputs.output }}" >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF
+      if: ${{ inputs.upload-sarif == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.output }}
