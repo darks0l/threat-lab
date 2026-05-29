@@ -22,6 +22,7 @@ import { runThreatLab } from './runner.js';
 import { isAnvilRunning } from './executor.js';
 import { auditDependencies } from './audit.js';
 import { scanTarget, watchTarget, loadScanPayload, compareScanPayloads, formatScanDiff, getWorstScanSeverity, severityMeetsOrExceeds, formatSecurityGateDecision } from './scanner.js';
+import { addFleetRepos, listFleetRepos, scanFleet, formatFleetSummary } from './fleet.js';
 import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
@@ -371,6 +372,46 @@ async function main() {
             }
             break;
         }
+        case 'monitor': {
+            const subcommand = args[1];
+            if (subcommand === 'add') {
+                const targets = args.slice(2);
+                if (targets.length === 0) {
+                    console.error('Usage: threat-lab monitor add <repo-path> [more-paths...]');
+                    process.exit(1);
+                }
+                const added = await addFleetRepos(targets);
+                console.log(`\n📡 Fleet registry updated — added ${added.length} repo(s)`);
+                for (const repo of added)
+                    console.log(`   + ${repo.label}`);
+                break;
+            }
+            if (subcommand === 'list') {
+                const repos = await listFleetRepos();
+                console.log(`\n📡 Fleet registry — ${repos.length} repo(s)`);
+                for (const repo of repos) {
+                    console.log(`   - ${repo.label}${repo.lastScannedAt ? ` | last scan ${repo.lastScannedAt}` : ''}`);
+                }
+                if (repos.length === 0)
+                    console.log('   (empty — use `threat-lab monitor add <path>` first)');
+                break;
+            }
+            if (subcommand === 'scan') {
+                const outputIdx = args.indexOf('--output');
+                const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : undefined;
+                const quick = args.includes('--quick');
+                const noDeps = args.includes('--no-deps');
+                const noIntel = args.includes('--no-intel');
+                const noSim = args.includes('--no-sim');
+                const network = args.includes('--network') ? args[args.indexOf('--network') + 1] : 'anvil';
+                const targets = args.filter((arg, idx) => idx > 1 && !arg.startsWith('--') && args[idx - 1] !== '--output' && args[idx - 1] !== '--network');
+                const summary = await scanFleet({ targets, quick, noDeps, noIntel, noSim, network, outputPath });
+                console.log(formatFleetSummary(summary));
+                break;
+            }
+            console.error('Usage: threat-lab monitor <add|list|scan>');
+            process.exit(1);
+        }
         default: {
             console.log(`
 🔬 Threat Lab CLI — AI-powered security research platform
@@ -382,6 +423,9 @@ Usage:
   threat-lab analyze <contract.sol> [--json]  Analyze a Solidity file (AI only)
   threat-lab scan <path>                  Unified scan: static + deps + intel + exploit sim
   threat-lab watch <path>                 Continuous monitor mode with diffs + alerts
+  threat-lab monitor add <repo...>        Add repos to the multi-repo fleet registry
+  threat-lab monitor list                 Show registered repos and last scan timestamps
+  threat-lab monitor scan                 Run a fleet scan + persistent threat-state update
   threat-lab scan <path> --quick          Skip exploit simulation (faster)
   threat-lab scan <path> --no-deps        Skip dependency audit
   threat-lab scan <path> --no-intel       Skip live threat intel (Layer 2b)
@@ -407,6 +451,8 @@ Quick start:
   threat-lab scan . --quick  # Fast scan (skip exploit simulation)
   threat-lab scan . --deep   # Full scan + modelab deep research + patch generation
   threat-lab watch . --interval 60 --iterations 5   # Monitor loop with diffing + alerts
+  threat-lab monitor add ../repo-a ../repo-b         # Register a repo fleet
+  threat-lab monitor scan --output fleet.json        # Scan the fleet + persist threat state
   threat-lab scan . --compare baseline.json # Show what changed since the last scan
   threat-lab scan . --output findings.sarif # Export SARIF for GitHub/code scanning
   threat-lab scan . --fail-on high          # CI gate: fail on high/critical findings

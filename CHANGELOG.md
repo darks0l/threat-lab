@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.4.2 — 2026-05-29
+
+- feat: add `monitor add|list|scan` commands for multi-repo fleet monitoring
+- feat: persist fleet registry, last fleet scan, and deduped threat memory under `.threat-lab/`
+- feat: build cross-repo dependency exposure maps so shared package blast radius is visible
+- feat: track package-level threat sightings across scans with first-seen / last-seen / repo exposure state
+- docs: add fleet monitor usage and persistent threat-state documentation
+
 ## v0.4.1 — 2026-05-29
 
 - feat: export unified scan results as SARIF 2.1.0 for GitHub code scanning and CI security pipelines

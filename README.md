@@ -74,6 +74,11 @@ npx threat-lab watch . --interval 60              # rescan every minute
 npx threat-lab watch . --interval 30 --iterations 5 # run 5 monitor cycles then exit
 npx threat-lab watch . --out-dir .threat-lab/watch # save per-cycle snapshots
 
+# Fleet monitor / multi-repo monitoring
+npx threat-lab monitor add ../repo-a ../repo-b
+npx threat-lab monitor list
+npx threat-lab monitor scan --output .reports/security/fleet.json
+
 # Analyze a Solidity file directly (static analysis only)
 npx threat-lab analyze ./contracts/MyVault.sol
 
@@ -255,6 +260,16 @@ npx threat-lab scan . --output .reports/security/threat-lab.sarif
 
 Custom output directories are created automatically, so nested paths are safe.
 
+### Fleet state files
+
+Threat Lab stores fleet-monitor state locally under `.threat-lab/`:
+
+- `fleet.json` - registered repos in the monitoring fleet
+- `fleet-last.json` - most recent fleet scan output
+- `threat-state.json` - persistent deduped threat memory across scans
+
+`threat-state.json` is where active package-level threat intel starts becoming durable instead of one-shot search noise.
+
 ### GitHub Action wrapper
 
 Threat Lab now ships a reusable composite action, so repos can use it directly:
@@ -358,6 +373,15 @@ Matches your contract to a built-in scenario by code signature, deploys it to An
 
 **Watch Mode** *(optional, `watch <path>`)*
 Build a baseline scan, re-run on an interval, diff each cycle, emit only new/escalated high-signal findings, and optionally save JSON snapshots for later review.
+
+**Fleet Monitor** *(new, `monitor ...`)*
+Threat Lab can now track multiple repos as a fleet:
+- `threat-lab monitor add ../repo-a ../repo-b` registers repos in `.threat-lab/fleet.json`
+- `threat-lab monitor list` shows the current fleet + last scan timestamps
+- `threat-lab monitor scan` runs repo-by-repo scans, builds shared dependency exposure maps, and persists threat memory to `.threat-lab/threat-state.json`
+- threat memory dedupes findings by package + source URL/title, tracks first seen / last seen / sightings, and records which repos are exposed
+
+This is the first step toward org-scale autonomous monitoring: shared package blast radius, new threat detection, and persistent cross-repo intel state.
 
 **Deep Research** *(optional, `--deep` flag)*
 Runs flagged findings through modelab's multi-model research pipeline:
