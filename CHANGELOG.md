@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.4.3 - 2026-07-12
+
+- feat: add `summary <scan.json>` so saved scan artifacts can produce an executive security summary without rescanning
+- feat: add `diff <baseline.json> <current.json>` for direct comparison of saved scan payloads
+- feat: add saved-artifact severity gating via `summary --fail-on <severity>`
+- fix: stop forcing all Bankr analysis traffic through Anthropic-prefixed models and preload a frontier-capable multi-provider default set
+- test: cover scan-payload summarization and reporting helpers
+
 ## v0.4.2 — 2026-05-29
 
 - feat: add `monitor add|list|scan` commands for multi-repo fleet monitoring

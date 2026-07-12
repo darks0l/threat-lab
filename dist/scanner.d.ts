@@ -124,6 +124,25 @@ export interface ScanPayload {
     target: string;
     results: ScanResult[];
 }
+export interface ScanPayloadExecutiveSummary {
+    scannedAt: string;
+    target: string;
+    fileCount: number;
+    overallSeverity: Severity;
+    averageScore: number;
+    findingsBySeverity: Record<Severity, number>;
+    findingsByCategory: Record<ConsolidatedFinding['category'], number>;
+    correlatedIntelAlerts: number;
+    activeExploitIntelAlerts: number;
+    confirmedSimulationFindings: number;
+    hotspots: Array<{
+        file: string;
+        severity: Severity;
+        threatScore: number;
+        topFinding: string | null;
+        recommendation: string | null;
+    }>;
+}
 export interface ScanDiffEntry {
     file: string;
     status: 'new' | 'resolved' | 'changed' | 'unchanged';
@@ -144,6 +163,8 @@ export interface ScanDiffSummary {
     entries: ScanDiffEntry[];
 }
 export declare function buildScanPayload(target: string, results: ScanResult[]): ScanPayload;
+export declare function summarizeScanPayload(payload: ScanPayload): ScanPayloadExecutiveSummary;
+export declare function formatScanPayloadSummary(payload: ScanPayload): string;
 export declare function loadScanPayload(path: string): Promise<ScanPayload>;
 export declare function compareScanPayloads(current: ScanPayload, baseline: ScanPayload): ScanDiffSummary;
 export declare function formatScanDiff(summary: ScanDiffSummary): string;

@@ -61,6 +61,21 @@ export interface ModelabAnalysisResult {
 const BANKR_API_URL = process.env.BANKR_API_URL ?? 'https://gateway.bankr.gg/v1/chat/completions';
 const BANKR_API_KEY = process.env.BANKR_API_KEY ?? '';
 
+function parseGatewayModelList(value: string | undefined, fallback: string[]): string[] {
+  if (!value) return fallback;
+  const models = value.split(',').map(model => model.trim()).filter(Boolean);
+  return models.length > 0 ? models : fallback;
+}
+
+function normalizeGatewayModel(model: string): string {
+  return /^[a-z0-9_-]+\//i.test(model) ? model : `anthropic/${model}`;
+}
+
+const DEFAULT_ANALYSIS_MODELS = parseGatewayModelList(process.env.THREAT_LAB_ANALYSIS_MODELS, [
+  'anthropic/claude-sonnet-5',
+  'openai/gpt-5.6',
+]);
+
 async function directLLMCall(
   scenarioId: string,
   scenarioName: string,
@@ -89,7 +104,7 @@ async function directLLMCall(
       'Authorization': `Bearer ${BANKR_API_KEY}`,
     },
     body: JSON.stringify({
-      model: model.startsWith('anthropic/') ? model : `anthropic/${model}`,
+      model: normalizeGatewayModel(model),
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: prompt },
@@ -178,7 +193,7 @@ export async function analyzeWithModelab(
     scenarioName,
     txTraces,
     contractCode,
-    models = ['claude-sonnet-4-6'],
+    models = DEFAULT_ANALYSIS_MODELS,
     chainId = 1,
   } = options;
 

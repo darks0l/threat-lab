@@ -565,6 +565,60 @@ export function buildScanPayload(target, results) {
         results,
     };
 }
+export function summarizeScanPayload(payload) {
+    const { target, scannedAt, results } = payload;
+    const summary = summarizeFindings(results);
+    const hotspots = [...results]
+        .sort((a, b) => severityIndex(a.overallSeverity) - severityIndex(b.overallSeverity) || (b.threatScore - a.threatScore))
+        .slice(0, 5)
+        .map(result => ({
+        file: result.file,
+        severity: result.overallSeverity,
+        threatScore: result.threatScore,
+        topFinding: result.findings[0]?.title ?? result.staticAnalysis?.aiReport?.attackPattern ?? null,
+        recommendation: result.recommendations[0] ?? result.findings[0]?.recommendation ?? null,
+    }));
+    return {
+        scannedAt,
+        target,
+        fileCount: results.length,
+        overallSeverity: getWorstScanSeverity(results),
+        averageScore: results.length > 0 ? Math.round(results.reduce((sum, result) => sum + result.threatScore, 0) / results.length) : 0,
+        findingsBySeverity: summary.bySeverity,
+        findingsByCategory: summary.byCategory,
+        correlatedIntelAlerts: summary.correlatedIntelAlerts,
+        activeExploitIntelAlerts: summary.activeExploitIntelAlerts,
+        confirmedSimulationFindings: summary.byCategory.sim,
+        hotspots,
+    };
+}
+export function formatScanPayloadSummary(payload) {
+    const summary = summarizeScanPayload(payload);
+    const lines = [];
+    lines.push('');
+    lines.push('Threat Lab Scan Summary');
+    lines.push(`  Target: ${summary.target}`);
+    lines.push(`  Scanned: ${summary.scannedAt}`);
+    lines.push(`  Files: ${summary.fileCount}`);
+    lines.push(`  Overall threat: ${summary.overallSeverity.toUpperCase()}`);
+    lines.push(`  Average score: ${summary.averageScore}/100`);
+    lines.push(`  Findings: critical=${summary.findingsBySeverity.critical}, high=${summary.findingsBySeverity.high}, medium=${summary.findingsBySeverity.medium}, low=${summary.findingsBySeverity.low}, info=${summary.findingsBySeverity.informational}`);
+    lines.push(`  Categories: static=${summary.findingsByCategory.static}, deps=${summary.findingsByCategory.deps}, intel=${summary.findingsByCategory.intel}, sim=${summary.findingsByCategory.sim}`);
+    lines.push(`  Correlated intel alerts: ${summary.correlatedIntelAlerts}`);
+    lines.push(`  Active exploit intel alerts: ${summary.activeExploitIntelAlerts}`);
+    lines.push(`  Confirmed simulation findings: ${summary.confirmedSimulationFindings}`);
+    if (summary.hotspots.length > 0) {
+        lines.push('');
+        lines.push('  Hotspots:');
+        for (const hotspot of summary.hotspots) {
+            lines.push(`  - ${hotspot.file}`);
+            lines.push(`    ${hotspot.severity.toUpperCase()} | score ${hotspot.threatScore}/100${hotspot.topFinding ? ` | ${hotspot.topFinding}` : ''}`);
+            if (hotspot.recommendation)
+                lines.push(`    Fix first: ${hotspot.recommendation}`);
+        }
+    }
+    return lines.join('\n');
+}
 function buildMarkdownReport(target, results) {
     const payload = buildScanPayload(target, results);
     const overallWorst = getWorstScanSeverity(results);

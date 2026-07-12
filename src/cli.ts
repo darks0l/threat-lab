@@ -22,7 +22,7 @@ import { getLibraryStats, searchLibrary, exportLibrary } from './library.js';
 import { runThreatLab } from './runner.js';
 import { isAnvilRunning } from './executor.js';
 import { auditDependencies } from './audit.js';
-import { scanTarget, watchTarget, loadScanPayload, compareScanPayloads, formatScanDiff, getWorstScanSeverity, severityMeetsOrExceeds, formatSecurityGateDecision } from './scanner.js';
+import { scanTarget, watchTarget, loadScanPayload, compareScanPayloads, formatScanDiff, getWorstScanSeverity, severityMeetsOrExceeds, formatSecurityGateDecision, summarizeScanPayload, formatScanPayloadSummary } from './scanner.js';
 import { addFleetRepos, listFleetRepos, scanFleet, formatFleetSummary } from './fleet.js';
 import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
@@ -341,6 +341,63 @@ async function main() {
       break;
     }
 
+    case 'summary': {
+      const payloadPath = args[1];
+      const jsonOutput = args.includes('--json');
+      const failOnIdx = args.indexOf('--fail-on');
+      const failOnSeverity = failOnIdx !== -1 ? args[failOnIdx + 1] as import('./schemas.js').Severity : undefined;
+
+      if (!payloadPath) {
+        console.error('Usage: threat-lab summary <scan.json> [--fail-on high] [--json]');
+        process.exit(1);
+      }
+
+      const validFailThresholds = new Set(['critical', 'high', 'medium', 'low', 'informational']);
+      if (failOnSeverity && !validFailThresholds.has(failOnSeverity)) {
+        console.error(`\n❌ Invalid --fail-on threshold: ${failOnSeverity}`);
+        console.error('   Use one of: critical, high, medium, low, informational');
+        process.exit(1);
+      }
+
+      const payload = await loadScanPayload(payloadPath);
+      if (jsonOutput) {
+        console.log(JSON.stringify(summarizeScanPayload(payload), null, 2));
+      } else {
+        console.log(formatScanPayloadSummary(payload));
+      }
+
+      if (failOnSeverity) {
+        const worst = getWorstScanSeverity(payload.results);
+        const gateSummary = formatSecurityGateDecision(payload.results, failOnSeverity);
+        if (severityMeetsOrExceeds(worst, failOnSeverity)) {
+          console.error(`\n❌ ${gateSummary}`);
+          process.exit(1);
+        }
+        console.log(`\n✅ ${gateSummary}`);
+      }
+      break;
+    }
+
+    case 'diff': {
+      const baselinePath = args[1];
+      const currentPath = args[2];
+      const jsonOutput = args.includes('--json');
+      if (!baselinePath || !currentPath) {
+        console.error('Usage: threat-lab diff <baseline.json> <current.json> [--json]');
+        process.exit(1);
+      }
+
+      const baseline = await loadScanPayload(baselinePath);
+      const current = await loadScanPayload(currentPath);
+      const diff = compareScanPayloads(current, baseline);
+      if (jsonOutput) {
+        console.log(JSON.stringify(diff, null, 2));
+      } else {
+        console.log(formatScanDiff(diff));
+      }
+      break;
+    }
+
     case 'watch': {
       const targetPath = args[1] ?? '.';
       const quick = args.includes('--quick');
@@ -455,6 +512,9 @@ Usage:
   threat-lab scan <path> --output report.md  Save scan report to .md, .json, or .sarif
   threat-lab scan <path> --compare old.json  Compare current scan to a prior JSON report
   threat-lab scan <path> --fail-on high     Exit non-zero when scan severity hits threshold
+  threat-lab summary <scan.json>            Summarize a saved JSON scan artifact
+  threat-lab summary <scan.json> --fail-on high  Re-check a saved scan against a severity gate
+  threat-lab diff <baseline.json> <current.json> Compare two saved JSON scan artifacts
   threat-lab watch <path> --interval 30     Re-scan every 30s and diff against prior run
   threat-lab watch <path> --iterations 3    Run 3 monitor cycles then exit
   threat-lab audit <path>                 Dependency audit only (npm + OSV + Socket.dev)
@@ -478,6 +538,8 @@ Quick start:
   threat-lab scan . --compare baseline.json # Show what changed since the last scan
   threat-lab scan . --output findings.sarif # Export SARIF for GitHub/code scanning
   threat-lab scan . --fail-on high          # CI gate: fail on high/critical findings
+  threat-lab summary threat-lab-report.json --fail-on high
+  threat-lab diff baseline.json current.json --json
   threat-lab audit .         # Dependency audit only
   threat-lab run reentrancy-101  # Execute + analyze + add to library
 

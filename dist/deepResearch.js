@@ -18,8 +18,21 @@
 // ── modelab configuration ─────────────────────────────────────────────────────
 const BANKR_API_URL = process.env.BANKR_API_URL ?? 'https://gateway.bankr.gg/v1/chat/completions';
 const BANKR_API_KEY = process.env.BANKR_API_KEY ?? '';
-const DEFAULT_MODELS = ['claude-sonnet-4-6', 'anthropic/claude-opus-4-6'];
-const FALLBACK_MODELS = ['anthropic/claude-sonnet-4-6']; // minimum viable set
+function parseGatewayModelList(value, fallback) {
+    if (!value)
+        return fallback;
+    const models = value.split(',').map(model => model.trim()).filter(Boolean);
+    return models.length > 0 ? models : fallback;
+}
+function normalizeGatewayModel(model) {
+    return /^[a-z0-9_-]+\//i.test(model) ? model : `anthropic/${model}`;
+}
+const DEFAULT_MODELS = parseGatewayModelList(process.env.THREAT_LAB_DEEP_MODELS, [
+    'anthropic/claude-sonnet-5',
+    'openai/gpt-5.6',
+    'google/gemini-2.5-pro',
+]);
+const FALLBACK_MODELS = parseGatewayModelList(process.env.THREAT_LAB_DEEP_FALLBACK_MODELS, ['anthropic/claude-sonnet-5']); // minimum viable set
 // ── System prompt for deep research ──────────────────────────────────────────
 const SYSTEM_PROMPT = `You are a DeFi smart contract security researcher running deep-dive analysis. Your job is to:
 
@@ -120,7 +133,7 @@ async function researchWithModel(finding, model) {
             'Authorization': `Bearer ${BANKR_API_KEY}`,
         },
         body: JSON.stringify({
-            model: model.startsWith('anthropic/') ? model : `anthropic/${model}`,
+            model: normalizeGatewayModel(model),
             messages: [
                 { role: 'system', content: SYSTEM_PROMPT },
                 { role: 'user', content: prompt },
@@ -141,7 +154,7 @@ async function researchWithModel(finding, model) {
     return { model, text, cost, durationMs };
 }
 export async function runDeepResearch(options) {
-    const { finding, contractCode, models = DEFAULT_MODELS } = options;
+    const { finding, contractCode, models = DEFAULT_MODELS.length > 0 ? DEFAULT_MODELS : FALLBACK_MODELS } = options;
     console.log(`\n  [deep] Researching: ${finding.title}`);
     // Run multiple models in parallel (modelab-style: parallel arms)
     const results = await Promise.allSettled(models.map(model => researchWithModel(finding, model)));

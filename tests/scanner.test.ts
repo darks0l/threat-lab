@@ -235,6 +235,63 @@ describe('scanner file discovery', () => {
     expect(formatSecurityGateDecision(results, 'high')).toContain('worst severity high vs threshold high');
   });
 
+  it('summarizes saved scan payloads into hotspots and rollups', async () => {
+    const scanner = await import('../src/scanner.js');
+    const { summarizeScanPayload, formatScanPayloadSummary } = scanner;
+
+    const payload: scanner.ScanPayload = {
+      scannedAt: '2026-07-12T12:00:00.000Z',
+      target: 'demo-project',
+      results: [
+        {
+          file: 'contracts/A.sol',
+          staticAnalysis: null,
+          dependencyAudit: null,
+          threatIntel: [],
+          exploitSim: null,
+          overallSeverity: 'critical',
+          threatScore: 92,
+          findings: [{
+            category: 'static',
+            severity: 'critical',
+            title: 'Reentrancy pattern',
+            description: 'External call before state update',
+            recommendation: 'Apply CEI',
+          }],
+          recommendations: ['Apply CEI'],
+          durationMs: 5,
+          errors: [],
+        },
+        {
+          file: 'contracts/B.sol',
+          staticAnalysis: null,
+          dependencyAudit: null,
+          threatIntel: [],
+          exploitSim: null,
+          overallSeverity: 'medium',
+          threatScore: 41,
+          findings: [],
+          recommendations: ['Review invariants'],
+          durationMs: 5,
+          errors: [],
+        },
+      ],
+    };
+
+    const summary = summarizeScanPayload(payload);
+    expect(summary.target).toBe('demo-project');
+    expect(summary.overallSeverity).toBe('critical');
+    expect(summary.averageScore).toBe(67);
+    expect(summary.hotspots[0].file).toBe('contracts/A.sol');
+    expect(summary.hotspots[0].topFinding).toBe('Reentrancy pattern');
+
+    const formatted = formatScanPayloadSummary(payload);
+    expect(formatted).toContain('Threat Lab Scan Summary');
+    expect(formatted).toContain('Overall threat: CRITICAL');
+    expect(formatted).toContain('contracts/A.sol');
+    expect(formatted).toContain('Apply CEI');
+  });
+
   it('builds watch alerts for new and escalated findings across monitor cycles', async () => {
     const scanner = await import('../src/scanner.js');
     const tmp = join(tmpdir(), `threat-lab-watch-${Date.now()}`);
